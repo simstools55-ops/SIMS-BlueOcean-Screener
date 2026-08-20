@@ -1,23 +1,24 @@
-# SIMS Blue Ocean Screener v0.1.11
+# SIMS Blue Ocean Screener v0.1.12
 
-## 主な変更
-- `6. カニバリ精査結果を登録する` を追加
-- `SIMS_BOS_CANNIBAL_REVIEW_RESULT_V1` JSONをDriveから選択してCandidatesへ反映
-- request_id照合を実施
-- 最終GREEN/YELLOW/BLOCKとCannibalization LOW/MEDIUM/HIGHを登録
-- カニバリ精査の article_scope / existing_article_boundary / matched_articles / internal_link_candidates を保持
-- Creator依頼文へ上記のカニバリ防止情報を自動挿入
-- Creator依頼文は最終GREEN候補だけ生成可能
+## 今回のPATCH修正
 
-## v0.1.10からの置換
+Creator実記事試験で、「語数：3語」が記事の目標文字数・ボリューム指定と誤解されたため、Creator依頼文の表記を修正しました。
+
+- `## 語数 / 3語` → `## キーワード構成 / 3語ロングテール`
+- `## 既存記事へ任せる範囲` → `## 既存記事との検索意図の境界`
+
+処理フロー、SERP判定、カニバリ判定、結果登録、Creator連携ロジックには変更ありません。
+
+## v0.1.11からの差し替え
+
 - Code.gs: 置換
-- DrivePicker.html: 置換
+- DrivePicker.html: 変更なし
 - appsscript.json: 変更なし
 
-## 実機試験
-1. Code.gs / DrivePicker.html を置換
-2. スプレッドシートを再読み込み
-3. `6. カニバリ精査結果を登録する`
-4. `SIMS-BOS-Cannibal-Review-Result-SBOS-CANNIBAL-20260821-041645.json` を選択
-5. GREEN 2件とCannibalization LOW/MEDIUMの反映を確認
-6. GREEN行を選択して `8. Creator依頼文を作成する`
+## 確認方法
+
+1. `Code.gs` を丸ごと置換
+2. 保存してスプレッドシートを再読み込み
+3. GREEN候補を選び `8. Creator依頼文を作成する`
+4. `キーワード構成：3語ロングテール` と表示されることを確認
+5. `既存記事との検索意図の境界` と表示されることを確認

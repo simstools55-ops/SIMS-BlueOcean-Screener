@@ -16,7 +16,7 @@
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.11';
+const SBOS_VERSION = '0.1.12';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -1061,14 +1061,14 @@ function sbosBuildCreatorReferral_(v) {
   return [
     '# SIMS Article Creator 新記事作成依頼','',
     '## メインキーワード', v[2],'',
-    '## 語数', v[3] + '語','',
+    '## キーワード構成', v[3] + '語ロングテール','',
     '## Blue Ocean Score', v[5],'',
     '## 最終判定', v[1] + ' / Cannibalization: ' + v[6],'',
     '## 検索意図', v[7],'',
     '## Blue Ocean / Cannibal Evidence', v[8],'',
     '## 新記事が担当する範囲',
     d.article_scope || 'このキーワード固有の検索意図に限定して新規記事として独立させてください.','',
-    '## 既存記事へ任せる範囲',
+    '## 既存記事との検索意図の境界',
     d.existing_article_boundary || '既存記事の担当検索意図を侵食しないでください.','',
     '## 近接する既存記事', matchedText,'',
     '## 内部リンク候補', linkText,'',

@@ -1,6 +1,6 @@
 # Changelog
-## v0.1.11
-- Added cannibal review result JSON import.
-- Added request ID validation.
-- Added final candidate decision and cannibalization registration.
-- Enriched Creator referral with article scope, existing article boundaries, matched articles and internal-link candidates.
+
+## v0.1.12
+- Fixed Creator referral wording to prevent keyword word-count from being mistaken for article length.
+- Renamed existing-article handoff section to `既存記事との検索意図の境界`.
+- No workflow or scoring logic changes.
