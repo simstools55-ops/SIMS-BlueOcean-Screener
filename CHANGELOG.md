@@ -1,9 +1,12 @@
 # Changelog
 
-## v0.2.0
-- Connected 3-word to 4-word long-tail deepening into the production screening flow.
-- Added contextual 4-word expansion rules.
-- Added `GENERATED_4WORD` source classification and demand-verification requirement.
-- Limited generated candidates to two per base keyword and twenty total.
-- Removed XLSX from selectable inputs until direct XLSX parsing is implemented.
-- Normalized all product version strings to v0.2.0.
+## v0.3.0
+- Added safe two-step file selection with explicit confirmation.
+- Added persistent Close button to all Drive Picker file dialogs.
+- Added visual checkmark and selected-row highlighting.
+- Added Japanese user-facing labels for waiting and clustered states.
+- Added Home dashboard counts for existing/generated long tails, review queues, decisions and Creator handoff status.
+- Added gray-out treatment for Creator referral completed rows.
+- Added next-action guidance to main workflow dialogs.
+- Added migration of existing candidate status codes to user-facing labels.
+- Kept v0.2.0 SERP, four-word deepening, cannibal review and Creator handoff logic intact.

@@ -1,7 +1,7 @@
 /**
- * SIMS Blue Ocean Screener v0.2.0
- * Complete Single-Code distribution.
- * First runtime-test baseline.
+ * SIMS Blue Ocean Screener v0.3.0
+ * Single-Code Apps Script distribution.
+ * UI / operational completion baseline.
  *
  * Apps Script runtime modules are consolidated into this Code.gs.
  * DrivePicker.html remains a dedicated UI component and supports both file and folder selection.
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.2.0
+ * SIMS Blue Ocean Screener v0.3.0
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.2.0';
+const SBOS_VERSION = '0.3.0';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -72,6 +72,79 @@ const SBOS_TROUBLE_TERMS = [
   '消えた','ない','遅い','重い','切れる','落ちる','暗くならない','読み取れない','使えない','充電できない',
   'エラー','不具合','直らない','復帰しない','開かない','動かない','認識しない'
 ];
+
+
+function sbosStatusLabel_(code) {
+  const map = {
+    'PENDING':'SERP精査待ち',
+    'CANNIBAL_PENDING':'カニバリ精査待ち',
+    'CLUSTERED':'類似候補へ統合',
+    'NOT_RUN':'未実施'
+  };
+  return map[String(code || '')] || String(code || '');
+}
+
+function sbosStatusCode_(value) {
+  const map = {
+    'SERP精査待ち':'PENDING',
+    'カニバリ精査待ち':'CANNIBAL_PENDING',
+    '類似候補へ統合':'CLUSTERED',
+    '未実施':'NOT_RUN'
+  };
+  return map[String(value || '')] || String(value || '');
+}
+
+function sbosSetHomeStatus_(text) {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME);
+  if (sh) sh.getRange('B17').setValue(text || '');
+}
+
+function sbosRefreshHomeSummary_() {
+  const ss = SpreadsheetApp.getActive();
+  const home = ss.getSheetByName(SBOS_SHEETS.HOME);
+  const kw = ss.getSheetByName(SBOS_SHEETS.KEYWORDS);
+  const cand = ss.getSheetByName(SBOS_SHEETS.CANDIDATES);
+  if (!home) return;
+
+  let existing4 = 0;
+  if (kw && kw.getLastRow() >= 2) {
+    const vals = kw.getRange(2,1,kw.getLastRow()-1,13).getDisplayValues();
+    existing4 = vals.filter(r => Number(r[5]) === 4).length;
+  }
+
+  let generated4=0, serpWait=0, cannibalWait=0, green=0, yellow=0, block=0, clustered=0, creatorReady=0, creatorDone=0;
+  if (cand && cand.getLastRow() >= 2) {
+    const vals = cand.getRange(2,1,cand.getLastRow()-1,13).getDisplayValues();
+    vals.forEach(r => {
+      const st = sbosStatusCode_(r[1]);
+      const serp = sbosStatusCode_(r[12]);
+      const src = String(r[9] || '');
+      const creator = String(r[10] || '');
+      if (src === 'GENERATED_4WORD') generated4++;
+      if (st === 'PENDING' || serp === 'PENDING' || serp === 'REQUESTED') serpWait++;
+      if (st === 'CANNIBAL_PENDING') cannibalWait++;
+      if (st === 'GREEN') {
+        green++;
+        if (creator === '作成済み') creatorDone++;
+        else creatorReady++;
+      }
+      if (st === 'YELLOW') yellow++;
+      if (st === 'BLOCK') block++;
+      if (st === 'CLUSTERED' || serp === 'CLUSTERED') clustered++;
+    });
+  }
+
+  home.getRange('B7').setValue(existing4);
+  home.getRange('B8').setValue(generated4);
+  home.getRange('B9').setValue(serpWait);
+  home.getRange('B10').setValue(cannibalWait);
+  home.getRange('B11').setValue(green);
+  home.getRange('B12').setValue(yellow);
+  home.getRange('B13').setValue(block);
+  home.getRange('B14').setValue(clustered);
+  home.getRange('B15').setValue(creatorReady);
+  home.getRange('B16').setValue(creatorDone);
+}
 
 // ============================================================================
 // Menu
@@ -169,7 +242,7 @@ function sbosShowCannibalEvidencePicker() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
   if (!sh || sh.getLastRow() < 2) throw new Error('Candidatesがありません。');
   const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
-  const greens = vals.filter(r => r[12] === 'GREEN' && r[1] === 'CANNIBAL_PENDING');
+  const greens = vals.filter(r => r[12] === 'GREEN' && sbosStatusCode_(r[1]) === 'CANNIBAL_PENDING');
   if (!greens.length) {
     SpreadsheetApp.getUi().alert('カニバリ精査対象がありません', 'SERP GREENかつCANNIBAL_PENDINGの候補がありません。', SpreadsheetApp.getUi().ButtonSet.OK);
     return;
@@ -321,8 +394,10 @@ function sbosWriteImportedKeywords_(rows, meta) {
   home.getRange('B5').setValue(meta.total);
   home.getRange('B6').setValue(meta.three);
   home.getRange('B7').setValue(meta.four);
-  home.getRange('B8').setValue(SBOS_STATUS.IMPORT_DONE);
+  home.getRange('B8').setValue(0);
+  sbosSetHomeStatus_('キーワード読込完了');
   sbosSetState_('status', SBOS_STATUS.IMPORT_DONE);
+  sbosRefreshHomeSummary_();
 }
 
 // ============================================================================
@@ -471,13 +546,13 @@ function sbosRunScreening_() {
   sbosWriteCandidates_(limited);
   sbosSetState_('status', SBOS_STATUS.SERP_RUNNING);
   sbosSetState_('generated_4word_count', generated.length);
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('SERP精査待ち');
+  sbosSetHomeStatus_('SERP精査待ち');
 
   SpreadsheetApp.getUi().alert(
     '一次選抜・4語深掘り完了',
     'SERP精査対象: ' + limited.length + '件\n' +
     '新規4語深掘り候補: ' + generated.length + '件\n\n' +
-    'GENERATED_4WORDは需要未確認です。SERP精査で実在需要と競合を確認するまでGREENにはしません。',
+    'GENERATED_4WORDは需要未確認です。SERP精査で実在需要と競合を確認するまでGREENにはしません。\n\n次に「3. SERP精査依頼Packageを作成する」を実行してください。',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
@@ -504,8 +579,8 @@ function sbosWriteCandidates_(items) {
       ? '3語候補「' + x.baseKeyword + '」から4語へ深掘り生成。理由: ' + x.generatedReason + '。需要Signalは未確認のため、実SERP・サジェスト等で確認するまでBlue Ocean確定不可。'
       : '入力ファイルに実在する候補。一次選抜通過。Pre Scoreです。実SERP確認前のためBlue Ocean Scoreは未確定です。';
     return [
-      i+1,'PENDING',x.kw,x.words,x.score,'PENDING','PENDING',sbosDescribeIntent_(x.kw),
-      evidence,x.source,'未作成',x.intent,'PENDING'
+      i+1,sbosStatusLabel_('PENDING'),x.kw,x.words,x.score,'PENDING','PENDING',sbosDescribeIntent_(x.kw),
+      evidence,x.source,'未作成',x.intent,sbosStatusLabel_('PENDING')
     ];
   });
   if (vals.length) sh.getRange(2,1,vals.length,13).setValues(vals);
@@ -519,20 +594,27 @@ function sbosDescribeIntent_(kw) {
 function sbosApplyCandidateFormatting_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
   sh.autoResizeColumns(1,13);
-  sh.setColumnWidth(3,280); sh.setColumnWidth(8,360); sh.setColumnWidth(9,420);
+  sh.setColumnWidth(2,150); sh.setColumnWidth(3,280); sh.setColumnWidth(8,360); sh.setColumnWidth(9,420);
   const last = sh.getLastRow();
   if (last >= 2) {
-    const vals = sh.getRange(2,2,last-1,1).getDisplayValues();
-    const bgs = vals.map(r => {
-      const s = r[0];
-      if (s === 'CANNIBAL_PENDING') return ['#fff2cc'];
-      if (s === 'YELLOW') return ['#fff2cc'];
-      if (s === 'BLOCK') return ['#e6e6e6'];
-      if (s === 'GREEN') return ['#d9ead3'];
-      return ['#f1f3f4'];
+    const vals = sh.getRange(2,1,last-1,13).getDisplayValues();
+    vals.forEach((r,i) => {
+      const row = i + 2;
+      const st = sbosStatusCode_(r[1]);
+      const creator = r[10];
+      if (creator === '作成済み') {
+        sh.getRange(row,1,1,13).setBackground('#eeeeee').setFontColor('#777777');
+        return;
+      }
+      sh.getRange(row,1,1,13).setFontColor('#202124').setBackground(null);
+      let bg = '#f1f3f4';
+      if (st === 'CANNIBAL_PENDING' || st === 'YELLOW') bg = '#fff2cc';
+      if (st === 'BLOCK' || st === 'CLUSTERED') bg = '#e6e6e6';
+      if (st === 'GREEN') bg = '#d9ead3';
+      sh.getRange(row,2).setBackground(bg);
     });
-    sh.getRange(2,2,last-1,1).setBackgrounds(bgs);
   }
+  sbosRefreshHomeSummary_();
 }
 
 // ============================================================================
@@ -575,7 +657,7 @@ function sbosCreateSerpReviewPackage() {
   }
 
   const values = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
-  const candidates = values.filter(r => r[12] === 'PENDING' || r[12] === 'REQUESTED').map(r => ({
+  const candidates = values.filter(r => sbosStatusCode_(r[12]) === 'PENDING' || r[12] === 'REQUESTED').map(r => ({
     rank: Number(r[0]) || 0,
     main_keyword: r[2],
     words: Number(r[3]) || 0,
@@ -631,14 +713,14 @@ function sbosCreateSerpReviewPackage() {
   sbosSetState_('serp_request_id', requestId);
   sbosSetState_('serp_package_file_id', file.getId());
   sbosSetState_('serp_package_file_name', zipName);
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('SERP精査依頼Package作成済み');
+  sbosSetHomeStatus_('SERP精査依頼Package作成済み');
 
   ui.alert(
     'SERP精査依頼Packageを作成しました',
     '候補: ' + candidates.length + '件\n' +
     'ファイル名: ' + zipName + '\n' +
     '保存先: ' + (folderName || folder.getName() || 'マイドライブ') + '\n\n' +
-    '次に、このZIPをChatGPTへそのままアップロードしてSERP精査を依頼してください。',
+    '次に、このZIPをChatGPTへそのままアップロードしてSERP精査を依頼し、返却JSONをGoogle Driveへ保存した後「4. SERP精査結果を登録する」を実行してください。',
     ui.ButtonSet.OK
   );
 }
@@ -796,7 +878,7 @@ function sbosImportSerpReviewResult(fileId) {
     row[11] = sbosIntentKey_(sbosNormalizeKeyword_(row[2]));
     row[12] = d;
     // SERP GREENはカニバリ検査前なので最終GREENにはしない。
-    row[1] = d === 'GREEN' ? 'CANNIBAL_PENDING' : d;
+    row[1] = d === 'GREEN' ? sbosStatusLabel_('CANNIBAL_PENDING') : d;
     applied++;
   });
   if (!applied) throw new Error('Candidatesのキーワードと一致するSERP結果がありませんでした。');
@@ -809,7 +891,7 @@ function sbosImportSerpReviewResult(fileId) {
   sbosSetState_('serp_result_file_id', file.getId());
   sbosSetState_('serp_result_file_name', file.getName());
   const summary = 'SERP精査結果登録済み（GREEN ' + counts.GREEN + ' / YELLOW ' + counts.YELLOW + ' / BLOCK ' + counts.BLOCK + '）';
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue(summary);
+  sbosSetHomeStatus_(summary);
   return {
     applied: applied,
     green: counts.GREEN,
@@ -861,9 +943,9 @@ function sbosCollapseCandidateIntentDuplicates_() {
     idxs.sort((a,b) => Number(data[b][5] || data[b][4] || 0) - Number(data[a][5] || data[a][4] || 0));
     const primary = idxs[0];
     idxs.slice(1).forEach(i => {
-      data[i][1] = 'CLUSTERED';
+      data[i][1] = sbosStatusLabel_('CLUSTERED');
       data[i][6] = 'NOT_RUN';
-      data[i][12] = 'CLUSTERED';
+      data[i][12] = sbosStatusLabel_('CLUSTERED');
       data[i][8] = '同一Intent Clusterのため「' + data[primary][2] + '」へ統合。別記事候補にはしません。 ' + String(data[i][8] || '');
       clustered++;
     });
@@ -878,7 +960,7 @@ function sbosCollapseCandidateIntentDuplicates_() {
 // ============================================================================
 /**
  * SERP evaluator adapter.
- * v0.2.0 deliberately does NOT scrape Google Search directly.
+ * v0.3.0 deliberately does NOT scrape Google Search directly.
  * A provider can be connected later through Settings / Script Properties.
  */
 function sbosEvaluateSerpCandidate_(candidate) {
@@ -886,7 +968,7 @@ function sbosEvaluateSerpCandidate_(candidate) {
   if (provider === 'NONE' || provider === 'CHATGPT_PACKAGE') {
     return {status:'PENDING', score:null, evidence:'ChatGPT SERP精査結果待ち'};
   }
-  throw new Error('SERP Provider「' + provider + '」はv0.2.0で未実装です。');
+  throw new Error('SERP Provider「' + provider + '」はv0.3.0で未実装です。');
 }
 
 // ============================================================================
@@ -1028,7 +1110,7 @@ function sbosImportCannibalReviewResult(fileId) {
   sbosSetState_('cannibal_result_file_id', file.getId());
   sbosSetState_('cannibal_review_result_json', JSON.stringify(detail));
   sbosSetState_('status', counts.GREEN ? 'CANNIBAL_REVIEW_IMPORTED' : SBOS_STATUS.COMPLETE);
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('カニバリ精査結果登録済み');
+  sbosSetHomeStatus_('カニバリ精査結果登録済み');
 
   return {applied:applied,green:counts.GREEN,yellow:counts.YELLOW,block:counts.BLOCK};
 }
@@ -1061,7 +1143,7 @@ function sbosCreateCannibalReviewPackageFromEvidence(fileId) {
     const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
     if (!sh || sh.getLastRow() < 2) throw new Error('Candidatesシートに候補がありません。');
     const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
-    const candidates = vals.filter(r => r[12] === 'GREEN' && r[1] === 'CANNIBAL_PENDING').map(r => ({
+    const candidates = vals.filter(r => r[12] === 'GREEN' && sbosStatusCode_(r[1]) === 'CANNIBAL_PENDING').map(r => ({
       rank:Number(r[0])||0, main_keyword:r[2], words:Number(r[3])||0,
       blue_ocean_score:Number(r[5])||0, search_intent:r[7],
       evidence_summary:r[8], intent_key:r[11]
@@ -1120,7 +1202,7 @@ function sbosCreateCannibalReviewPackageFromEvidence(fileId) {
     stage = '状態保存';
     sbosSetState_('cannibal_request_id', requestId);
     sbosSetState_('cannibal_package_file_id', out.getId());
-    SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('カニバリ精査Package作成済み');
+    sbosSetHomeStatus_('カニバリ精査Package作成済み');
 
     // HTMLダイアログから呼ばれるため、ここではSpreadsheet UI alertを開かない。
     return {
@@ -1142,7 +1224,7 @@ function sbosCreateCreatorReferral() {
   if (row < 2) throw new Error('Candidatesシートで候補行を1行選択してください。');
   const v = sh.getRange(row,1,1,13).getDisplayValues()[0];
   const status = v[1];
-  if (status !== 'GREEN') {
+  if (sbosStatusCode_(status) !== 'GREEN') {
     SpreadsheetApp.getUi().alert('Creator依頼文はGREEN確定候補のみ作成できます。現在の判定: ' + status);
     return;
   }
@@ -1153,6 +1235,8 @@ function sbosCreateCreatorReferral() {
   ).setWidth(760).setHeight(520);
   SpreadsheetApp.getUi().showModalDialog(html, '8. Creator依頼文を作成する');
   sh.getRange(row,11).setValue('作成済み');
+  sh.getRange(row,1,1,13).setBackground('#eeeeee').setFontColor('#777777');
+  sbosRefreshHomeSummary_();
 }
 
 function sbosBuildCreatorReferral_(v) {
@@ -1246,27 +1330,42 @@ function sbosEnsureSheets_() {
   sbosInitSettings_();
   sbosInitKeywords_();
   sbosInitCandidates_();
+  sbosRefreshHomeSummary_();
 }
 
 function sbosInitHome_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME);
-  if (!(sh.getLastRow() > 0 && sh.getRange('A1').getValue())) {
-    sh.clear();
-    sh.getRange('A1:B8').setValues([
-      [SBOS_PRODUCT_NAME, ''],
-      ['Version', SBOS_VERSION],
-      ['対象ブログ', '未設定'],
-      ['入力ファイル', '未選択'],
-      ['総キーワード数', 0],
-      ['3語候補', 0],
-      ['4語候補', 0],
-      ['処理状態', '未実行']
-    ]);
-    sh.getRange('A1').setFontWeight('bold').setFontSize(16);
-    sh.setColumnWidths(1, 2, 220);
-  }
-  sh.getRange('A1').setValue(SBOS_PRODUCT_NAME);
-  sh.getRange('B2').setValue(SBOS_VERSION);
+  if (!(sh.getLastRow() > 0 && sh.getRange('A1').getValue())) sh.clear();
+
+  const labels = [
+    [SBOS_PRODUCT_NAME, ''],
+    ['Version', SBOS_VERSION],
+    ['対象ブログ', sbosGetSetting_('site_name') || '未設定'],
+    ['入力ファイル', sh.getRange('B4').getDisplayValue() || '未選択'],
+    ['総キーワード数', Number(sh.getRange('B5').getValue()) || 0],
+    ['3語候補', Number(sh.getRange('B6').getValue()) || 0],
+    ['既存4語候補', 0],
+    ['生成4語候補', 0],
+    ['SERP精査待ち', 0],
+    ['カニバリ精査待ち', 0],
+    ['GREEN', 0],
+    ['YELLOW', 0],
+    ['BLOCK', 0],
+    ['類似候補へ統合', 0],
+    ['Creator依頼可能', 0],
+    ['Creator依頼済み', 0],
+    ['処理状態', sh.getRange('B17').getDisplayValue() || '未実行']
+  ];
+  sh.getRange('A1:B17').setValues(labels);
+  sh.getRange('A1').setFontWeight('bold').setFontSize(16);
+  sh.getRange('A2:A17').setFontWeight('bold');
+  sh.setColumnWidth(1, 190);
+  sh.setColumnWidth(2, 320);
+  sh.getRange('A11:B11').setBackground('#d9ead3');
+  sh.getRange('A12:B12').setBackground('#fff2cc');
+  sh.getRange('A13:B13').setBackground('#e6e6e6');
+  sh.getRange('A14:B14').setBackground('#f1f3f4');
+  sbosRefreshHomeSummary_();
 }
 
 
@@ -1307,11 +1406,27 @@ function sbosInitCandidates_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
   if (sh.getLastRow() === 0) sh.getRange(1,1,1,13).clear();
   sh.getRange(1,1,1,13).setValues([[
-    'Rank','Status','Main Keyword','Words','Pre Score','Blue Ocean Score','Cannibalization','Search Intent',
+    'Rank','状態','Main Keyword','Words','Pre Score','Blue Ocean Score','Cannibalization','Search Intent',
     'Evidence Summary','Source','Creator Status','Intent Key','SERP Status'
   ]]);
   sh.setFrozenRows(1);
   sh.getRange(1,1,1,13).setFontWeight('bold');
+
+  if (sh.getLastRow() >= 2) {
+    const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getValues();
+    let changed = false;
+    vals.forEach(r => {
+      const main = String(r[1] || '');
+      if (['PENDING','CANNIBAL_PENDING','CLUSTERED'].includes(main)) {
+        r[1] = sbosStatusLabel_(main); changed = true;
+      }
+      const serp = String(r[12] || '');
+      if (['PENDING','CLUSTERED'].includes(serp)) {
+        r[12] = sbosStatusLabel_(serp); changed = true;
+      }
+    });
+    if (changed) sh.getRange(2,1,vals.length,13).setValues(vals);
+  }
 }
 
 function sbosOpenCandidates() {
