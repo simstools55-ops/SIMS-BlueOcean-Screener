@@ -16,7 +16,7 @@
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.6';
+const SBOS_VERSION = '0.1.7';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -312,19 +312,34 @@ function sbosDetectWordCount_(keyword) {
   return s ? s.split(/\s+/).filter(Boolean).length : 0;
 }
 
+function sbosKeywordMatchKey_(keyword) {
+  // SERP返却結果の行照合専用。意味を変える正規化は行わない。
+  // 同一Intentの別表現（例: 0 / 0パーセント）が互いを上書きしないことが目的。
+  let s = String(keyword || '').normalize('NFKC').toLowerCase().trim();
+  s = s.replace(/iphone\s*17/g, 'iphone17');
+  s = s.replace(/\s+/g, ' ');
+  return s;
+}
+
 function sbosIntentKey_(normalized) {
   let s = String(normalized || '');
   const repl = [
     [/0%|完全放電/g,'ZERO_BATTERY'],
     [/充電できない|充電しない|復帰しない/g,'CHARGE_FAIL'],
     [/つながらない|接続できない/g,'CONNECT_FAIL'],
-    [/表示されない|ない/g,'NOT_SHOWN'],
+    [/表示\s*されない/g,'DISPLAY_MISSING'],
+    [/反応\s*しない/g,'NO_RESPONSE'],
+    [/読み込めない/g,'CANNOT_LOAD'],
     [/読み取れない|認識しない/g,'READ_FAIL'],
+    [/音が出ない/g,'NO_SOUND'],
+    [/在庫(?:が)?ない/g,'OUT_OF_STOCK'],
+    [/人気(?:が)?ない/g,'UNPOPULAR'],
     [/切れる|切断/g,'DISCONNECT'],
     [/進まない/g,'STUCK'],
     [/設定\s*どこ|どこ\s*設定|どこ/g,'LOCATION']
   ];
   repl.forEach(([re,to]) => s = s.replace(re,to));
+  // 一般的な「ない」は意味が多様なので共通トークンへ潰さない。
   return s.replace(/[^a-z0-9%一-龠ぁ-んァ-ヶー_]+/gi,'_').replace(/^_+|_+$/g,'');
 }
 
@@ -666,14 +681,18 @@ function sbosImportSerpReviewResult(fileId) {
   const data = sh.getRange(2,1,sh.getLastRow()-1,13).getValues();
   const resultMap = new Map();
   payload.results.forEach(r => {
-    const key = sbosNormalizeKeyword_(r.main_keyword || '');
-    if (key) resultMap.set(key, r);
+    const key = sbosKeywordMatchKey_(r.main_keyword || '');
+    if (!key) return;
+    if (resultMap.has(key)) {
+      throw new Error('SERP結果JSONに同一main_keywordが重複しています: ' + String(r.main_keyword || ''));
+    }
+    resultMap.set(key, r);
   });
 
   let applied = 0;
   const counts = {GREEN:0, YELLOW:0, BLOCK:0};
   data.forEach((row, i) => {
-    const key = sbosNormalizeKeyword_(row[2]);
+    const key = sbosKeywordMatchKey_(row[2]);
     const r = resultMap.get(key);
     if (!r) return;
     const d = String(r.serp_decision || '').toUpperCase();
@@ -775,7 +794,7 @@ function sbosEvaluateSerpCandidate_(candidate) {
   if (provider === 'NONE' || provider === 'CHATGPT_PACKAGE') {
     return {status:'PENDING', score:null, evidence:'ChatGPT SERP精査結果待ち'};
   }
-  throw new Error('SERP Provider「' + provider + '」はv0.1.6で未実装です。');
+  throw new Error('SERP Provider「' + provider + '」はv0.1.7で未実装です。');
 }
 
 // ============================================================================
