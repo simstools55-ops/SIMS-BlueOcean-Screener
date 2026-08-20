@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.1.6
+ * SIMS Blue Ocean Screener v0.1.8
  * Complete Single-Code distribution.
  * First runtime-test baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.1.6
+ * SIMS Blue Ocean Screener v0.1.8
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.7';
+const SBOS_VERSION = '0.1.8';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -26,7 +26,7 @@ function onOpen() {
 function sbosAbout() {
   SpreadsheetApp.getUi().alert(
     SBOS_PRODUCT_NAME,
-    'Version: ' + SBOS_VERSION + '\n\n3語・4語のロングテール候補を選別し、Blue Ocean判定・カニバリ判定・Writer依頼文生成までを支援します。',
+    'Version: ' + SBOS_VERSION + '\n\n3語・4語のロングテール候補を選別し、Blue Ocean判定・カニバリ判定・Creator依頼文生成までを支援します。',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
@@ -80,8 +80,9 @@ function sbosBuildMenu_() {
     .addItem('2. ブルーオーシャン候補を探索する', 'sbosStartScreening')
     .addItem('3. SERP精査依頼Packageを作成する', 'sbosCreateSerpReviewPackage')
     .addItem('4. SERP精査結果を登録する', 'sbosShowSerpResultPicker')
-    .addItem('5. 候補を確認する', 'sbosOpenCandidates')
-    .addItem('6. Writer依頼文を作成する', 'sbosCreateWriterReferral')
+    .addItem('5. カニバリ精査Packageを作成する', 'sbosShowCannibalEvidencePicker')
+    .addItem('6. 候補を確認する', 'sbosOpenCandidates')
+    .addItem('7. Creator依頼文を作成する', 'sbosCreateCreatorReferral')
     .addSeparator()
     .addSubMenu(
       ui.createMenu('追加の操作')
@@ -157,6 +158,23 @@ function sbosShowSerpResultPicker() {
   SpreadsheetApp.getUi().showModalDialog(html, '4. SERP精査結果を登録する');
 }
 
+
+function sbosShowCannibalEvidencePicker() {
+  sbosEnsureSheets_();
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+  if (!sh || sh.getLastRow() < 2) throw new Error('Candidatesがありません。');
+  const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
+  const greens = vals.filter(r => r[12] === 'GREEN' && r[1] === 'CANNIBAL_PENDING');
+  if (!greens.length) {
+    SpreadsheetApp.getUi().alert('カニバリ精査対象がありません', 'SERP GREENかつCANNIBAL_PENDINGの候補がありません。', SpreadsheetApp.getUi().ButtonSet.OK);
+    return;
+  }
+  const template = HtmlService.createTemplateFromFile('DrivePicker');
+  template.pickerMode = 'cannibal_evidence';
+  const html = template.evaluate().setWidth(760).setHeight(520);
+  SpreadsheetApp.getUi().showModalDialog(html, '5. カニバリ精査用Evidenceを選ぶ');
+}
+
 function sbosSetOutputFolder(folderId, folderName) {
   sbosSetSetting_('output_folder_id', String(folderId || ''));
   sbosSetSetting_('output_folder_name', String(folderName || 'マイドライブ'));
@@ -177,7 +195,9 @@ function sbosListDriveFiles(folderId, pickerMode) {
     const f = files.next();
     const name = f.getName();
     const isSerpResult = pickerMode === 'serp_result';
-    const ok = isSerpResult ? /\.json$/i.test(name) : /\.(csv|tsv|xlsx)$/i.test(name);
+    const isCannibalEvidence = pickerMode === 'cannibal_evidence';
+    const ok = isSerpResult ? /\.json$/i.test(name)
+      : (isCannibalEvidence ? /\.(zip|csv|tsv|json)$/i.test(name) : /\.(csv|tsv|xlsx)$/i.test(name));
     if (ok) result.push({type:'file', id:f.getId(), name:name, mime:f.getMimeType()});
   }
   result.sort((a,b) => a.type === b.type ? a.name.localeCompare(b.name, 'ja') : (a.type === 'folder' ? -1 : 1));
@@ -199,7 +219,7 @@ function sbosImportDriveFile(fileId) {
   const file = DriveApp.getFileById(fileId);
   const name = file.getName();
   if (/\.xlsx$/i.test(name)) {
-    throw new Error('v0.1.6ではXLSXの直接読込は未実装です。CSV/TSVで保存して選択してください。');
+    throw new Error('v0.1.8ではXLSXの直接読込は未実装です。CSV/TSVで保存して選択してください。');
   }
   const blob = file.getBlob();
   const bytes = blob.getBytes();
@@ -769,7 +789,7 @@ function sbosCollapseCandidateIntentDuplicates_() {
     idxs.sort((a,b) => Number(data[b][5] || data[b][4] || 0) - Number(data[a][5] || data[a][4] || 0));
     const primary = idxs[0];
     idxs.slice(1).forEach(i => {
-      data[i][1] = 'BLOCK';
+      data[i][1] = 'CLUSTERED';
       data[i][6] = 'NOT_RUN';
       data[i][12] = 'CLUSTERED';
       data[i][8] = '同一Intent Clusterのため「' + data[primary][2] + '」へ統合。別記事候補にはしません。 ' + String(data[i][8] || '');
@@ -794,7 +814,7 @@ function sbosEvaluateSerpCandidate_(candidate) {
   if (provider === 'NONE' || provider === 'CHATGPT_PACKAGE') {
     return {status:'PENDING', score:null, evidence:'ChatGPT SERP精査結果待ち'};
   }
-  throw new Error('SERP Provider「' + provider + '」はv0.1.7で未実装です。');
+  throw new Error('SERP Provider「' + provider + '」はv0.1.8で未実装です。');
 }
 
 // ============================================================================
@@ -830,50 +850,119 @@ function sbosCannibalRisk_(keyword) {
   return {risk:max >= .9 ? 'HIGH' : 'MEDIUM', matched:matched.slice(0,5)};
 }
 
+
 // ============================================================================
-// Writer Referral
-// Source consolidated from: WriterReferral.gs
+// Cannibal Review Package
 // ============================================================================
-function sbosCreateWriterReferral() {
+function sbosCreateCannibalReviewPackageFromEvidence(fileId) {
+  sbosEnsureSheets_();
+  const ui = SpreadsheetApp.getUi();
+  const evidenceFile = DriveApp.getFileById(fileId);
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+  const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
+  const candidates = vals.filter(r => r[12] === 'GREEN' && r[1] === 'CANNIBAL_PENDING').map(r => ({
+    rank:Number(r[0])||0, main_keyword:r[2], words:Number(r[3])||0,
+    blue_ocean_score:Number(r[5])||0, search_intent:r[7],
+    evidence_summary:r[8], intent_key:r[11]
+  }));
+  if (!candidates.length) throw new Error('SERP GREENかつCANNIBAL_PENDINGの候補がありません。');
+
+  const siteName = sbosGetSetting_('site_name') || 'Unknown-Site';
+  const siteUrl = sbosGetSetting_('site_url') || '';
+  const folderId = sbosGetSetting_('output_folder_id');
+  const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+  const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
+  const requestId = 'SBOS-CANNIBAL-' + ts;
+  const payload = {
+    format:'SIMS_BOS_CANNIBAL_REVIEW_REQUEST_V1', contract_version:'1.0',
+    request_id:requestId, created_at:new Date().toISOString(),
+    site:{name:siteName,url:siteUrl}, candidate_count:candidates.length,
+    evidence_file:{name:evidenceFile.getName()}, candidates:candidates
+  };
+  const md = [
+    '# SIMS Blue Ocean Screener カニバリ精査依頼','',
+    '## 目的','',
+    'SERP GREEN候補が対象ブログの既存記事と検索意図を食い合わず、新規記事として独立できるか判定してください。','',
+    '## 判定','',
+    '- GREEN: 既存記事との役割が明確に分離でき、新規記事として独立可能',
+    '- YELLOW: 一部重複。記事境界・内部リンク・担当範囲の設計が必要',
+    '- BLOCK: 既存記事と同一または近接Intentで、新規記事化するとカニバリの可能性が高い','',
+    '## 必須確認','',
+    '- 既存記事タイトルだけでなく、メインクエリ・本文の担当範囲・検索意図を比較する',
+    '- 単語が重なるだけではBLOCKにしない',
+    '- GREENの場合はCreatorへ渡す「新記事が担当する範囲」「既存記事へ任せる範囲」「内部リンク候補」を返す','',
+    '## 返却JSON','',
+    '`SIMS_BOS_CANNIBAL_REVIEW_RESULT_V1`','',
+    'results[]: main_keyword, decision(GREEN/YELLOW/BLOCK), cannibalization(LOW/MEDIUM/HIGH), matched_articles[], article_scope, existing_article_boundary, internal_link_candidates[], evidence_summary'
+  ].join('\n');
+  const blobs = [
+    Utilities.newBlob(md,'text/markdown','CANNIBAL-REVIEW-REQUEST.md'),
+    Utilities.newBlob(JSON.stringify(payload,null,2),'application/json','CANNIBAL_REVIEW_REQUEST_V1.json'),
+    evidenceFile.getBlob().setName(evidenceFile.getName())
+  ];
+  const safeSite = sbosSafeFilePart_(siteName);
+  const zipName = 'SIMS-Blue-Ocean-Screener-' + safeSite + '-ChatGPT-Cannibal-Review-' + ts + '.zip';
+  const out = folder.createFile(Utilities.zip(blobs,zipName));
+  sbosSetState_('cannibal_request_id', requestId);
+  sbosSetState_('cannibal_package_file_id', out.getId());
+  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('カニバリ精査Package作成済み');
+  ui.alert('カニバリ精査Packageを作成しました',
+    '候補: '+candidates.length+'件\nEvidence: '+evidenceFile.getName()+'\nファイル名: '+zipName+
+    '\n\nこのZIPをChatGPTへそのままアップロードしてください。', ui.ButtonSet.OK);
+  return {count:candidates.length,fileName:zipName};
+}
+
+// ============================================================================
+// Creator Referral
+// Source consolidated from: CreatorReferral.gs
+// ============================================================================
+function sbosCreateCreatorReferral() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
   const row = sh.getActiveRange().getRow();
   if (row < 2) throw new Error('Candidatesシートで候補行を1行選択してください。');
   const v = sh.getRange(row,1,1,13).getDisplayValues()[0];
   const status = v[1];
   if (status !== 'GREEN') {
-    SpreadsheetApp.getUi().alert('Writer依頼文はGREEN確定候補のみ作成できます。現在の判定: ' + status);
+    SpreadsheetApp.getUi().alert('Creator依頼文はGREEN確定候補のみ作成できます。現在の判定: ' + status);
     return;
   }
-  const text = sbosBuildWriterReferral_(v);
+  const text = sbosBuildCreatorReferral_(v);
   const html = HtmlService.createHtmlOutput(
-    '<div style="font-family:Arial;padding:14px"><h3>Writer依頼文</h3><textarea style="width:100%;height:360px">' +
-    sbosEscapeHtml_(text) + '</textarea><p>全文をコピーしてWriterへ渡してください。</p></div>'
+    '<div style="font-family:Arial;padding:14px"><h3>Creator依頼文</h3><textarea style="width:100%;height:360px">' +
+    sbosEscapeHtml_(text) + '</textarea><p>全文をコピーしてSIMS Article Creatorへ渡してください。</p></div>'
   ).setWidth(760).setHeight(520);
-  SpreadsheetApp.getUi().showModalDialog(html, '6. Writer依頼文を作成する');
+  SpreadsheetApp.getUi().showModalDialog(html, '7. Creator依頼文を作成する');
   sh.getRange(row,11).setValue('作成済み');
 }
 
-function sbosBuildWriterReferral_(v) {
+function sbosBuildCreatorReferral_(v) {
   return [
-    '# SIMS Writer 新記事作成依頼',
+    '# SIMS Article Creator 新記事作成依頼',
     '',
     '## メインキーワード', v[2],
+    '',
+    '## 語数', v[3] + '語',
+    '',
+    '## Blue Ocean Score', v[5],
     '',
     '## 検索意図', v[7],
     '',
     '## Blue Ocean Evidence', v[8],
     '',
-    '## 記事の担当範囲',
-    'メインキーワードの具体的な検索意図に限定して解決してください。一般論へ広げすぎないでください。',
+    '## 新記事が担当する範囲',
+    'このキーワード固有の検索意図を中心に、新規記事として独立した価値を持つ範囲だけを扱ってください。',
+    '',
+    '## 既存記事との境界',
+    'カニバリ精査で確定した既存記事の担当領域を侵食しないでください。一般論へ広げすぎず、重複部分は必要最小限にしてください。',
     '',
     '## カニバリ防止条件',
-    '既存記事と重なる一般論は必要最小限にし、既存記事が担当する検索意図を奪わないでください。',
-    '',
-    '## 書いてはいけない範囲',
-    '検索意図と直接関係しない周辺テーマをSEO目的で大量に追加しないでください。',
+    '既存記事が担当する検索意図を奪わず、必要に応じて既存記事へ内部リンクで役割分担してください。',
     '',
     '## 事実確認',
-    '仕様・不具合・手順は執筆時点の一次情報を優先して確認し、未確認情報を断定しないでください。'
+    '仕様・不具合・手順・価格・発売状況などは執筆時点の一次情報を優先してWeb確認し、未確認情報を断定しないでください。',
+    '',
+    '## Creatorへの指示',
+    'これは新規記事作成案件です。既存記事のリライト案件として処理しないでください。'
   ].join('\n');
 }
 
@@ -994,14 +1083,13 @@ function sbosInitKeywords_() {
 
 function sbosInitCandidates_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
-  if (sh.getLastRow() === 0) {
-    sh.getRange(1,1,1,13).setValues([[
-      'Rank','Status','Main Keyword','Words','Pre Score','Blue Ocean Score','Cannibalization','Search Intent',
-      'Evidence Summary','Source','Writer Status','Intent Key','SERP Status'
-    ]]);
-    sh.setFrozenRows(1);
-    sh.getRange(1,1,1,13).setFontWeight('bold');
-  }
+  if (sh.getLastRow() === 0) sh.getRange(1,1,1,13).clear();
+  sh.getRange(1,1,1,13).setValues([[
+    'Rank','Status','Main Keyword','Words','Pre Score','Blue Ocean Score','Cannibalization','Search Intent',
+    'Evidence Summary','Source','Creator Status','Intent Key','SERP Status'
+  ]]);
+  sh.setFrozenRows(1);
+  sh.getRange(1,1,1,13).setFontWeight('bold');
 }
 
 function sbosOpenCandidates() {
