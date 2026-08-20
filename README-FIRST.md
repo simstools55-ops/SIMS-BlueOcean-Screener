@@ -1,35 +1,37 @@
-# SIMS Blue Ocean Screener v0.1.5
+# SIMS Blue Ocean Screener v0.1.6
 
-## Apps Scriptへ入れるファイル
+## Purpose
 
-- `Code.gs` — Apps Script本体。処理ロジックはこの1本に統合しています。
-- `DrivePicker.html` — Google Driveのファイル／保存先フォルダー選択UIです。
-- `appsscript.json` — マニフェスト。
+v0.1.6 adds the return path from ChatGPT SERP review to SIMS Blue Ocean Screener.
+The product keeps Apps Script runtime logic consolidated in `Code.gs`; `DrivePicker.html` remains the dedicated Drive selection UI.
 
-## v0.1.4からの更新
+## Replace for v0.1.5 users
 
-- `Code.gs` を丸ごと置換してください。
-- `DrivePicker.html` も丸ごと置換してください。
-- `appsscript.json` は変更ありません。
+- REPLACE: `Code.gs`
+- REPLACE: `DrivePicker.html`
+- NO CHANGE REQUIRED: `appsscript.json`
 
-## 新機能: SERP精査依頼Package
+## New workflow
 
-一次選抜後、メニュー `3. SERP精査依頼Packageを作成する` から、PENDING候補をChatGPTでWeb精査するためのZIPを作成できます。
+1. Import keyword file.
+2. Run Blue Ocean screening.
+3. Create SERP review package.
+4. Upload the package to ChatGPT and obtain `SIMS_BOS_SERP_REVIEW_RESULT_V1` JSON.
+5. Put the returned JSON in Google Drive.
+6. Run `4. SERP精査結果を登録する` and select the JSON through the Drive picker.
+7. Review Candidates.
 
-ZIP内容:
+## v0.1.6 behavior
 
-- `README-FIRST.md`
-- `SERP-REVIEW-REQUEST.md`
-- `SERP_REVIEW_REQUEST_V1.json`
+- Validates `format = SIMS_BOS_SERP_REVIEW_RESULT_V1`.
+- Validates the returned `request_id` against the package request ID stored in the spreadsheet.
+- Writes SERP decision, Blue Ocean Score and Evidence Summary back to Candidates.
+- Stores the complete returned result in hidden `_SerpReview` for audit/reference.
+- A SERP `GREEN` does NOT become final GREEN. It is shown as `CANNIBAL_PENDING` until cannibalization review is completed.
+- YELLOW and BLOCK are reflected immediately.
+- Strengthens Intent clustering for equivalent expressions such as `0` / `0パーセント` in charging context and `nfc 設定 どこ` / `nfc どこ`.
+- Duplicate Intent candidates are blocked from becoming separate article candidates.
 
-Package作成前に対象ブログとGoogle Drive保存先を設定します。保存先は `追加の操作 → 保存先を設定する` からWindows風Drive選択ダイアログで指定できます。
+## Important
 
-## 実用試験の次の手順
-
-1. 一次選抜20件がある状態で `追加の操作 → 保存先を設定する` を実行。
-2. 保存先フォルダーを選択。
-3. `3. SERP精査依頼Packageを作成する` を実行。
-4. 完了ダイアログに表示されたZIPをChatGPTへそのままアップロード。
-5. ChatGPTにSERP精査を依頼。
-
-SERP段階のGREENは新記事作成の最終GREENではありません。後段のカニバリ検査を通過して最終確定します。
+Writer referral remains available only for final `GREEN` candidates. v0.1.6 deliberately prevents SERP-stage GREEN candidates from being sent to Writer before cannibalization review.

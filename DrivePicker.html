@@ -8,9 +8,25 @@ body{font-family:Arial,sans-serif;margin:0;color:#202124} .bar{padding:10px 14px
 <div class="footer"><span id="msg"></span> <button id="selectFolderBtn" onclick="selectCurrentFolder()" style="display:none">このフォルダーを保存先にする</button> <button onclick="google.script.host.close()">閉じる</button></div>
 <script>
 const pickerMode='<?!= pickerMode ?>'; let folderId=''; let parentId=''; let folderName='マイドライブ';
-function load(id){folderId=id||'';document.getElementById('msg').textContent='読み込み中…';google.script.run.withSuccessHandler(render).withFailureHandler(err).sbosListDriveFiles(folderId)}
-function render(payload){folderId=payload.folderId||'';parentId=payload.parentId||'';folderName=payload.folderName||'マイドライブ';document.getElementById('path').textContent=folderName;document.getElementById('upBtn').disabled=!folderId;document.getElementById('selectFolderBtn').style.display=pickerMode==='folder'?'inline-block':'none';const items=(payload.items||[]).filter(x=>pickerMode==='file'||x.type==='folder');const el=document.getElementById('list');el.innerHTML='';items.forEach(x=>{const d=document.createElement('div');d.className='row';d.innerHTML='<span class="type">'+(x.type==='folder'?'フォルダー':'ファイル')+'</span><span class="name"></span>';d.querySelector('.name').textContent=x.name;d.onclick=()=>x.type==='folder'?load(x.id):choose(x.id,x.name);el.appendChild(d)});document.getElementById('msg').textContent=items.length+'件'}
-function choose(id,name){if(pickerMode!=='file')return;document.getElementById('msg').textContent='「'+name+'」を読み込み中…';google.script.run.withSuccessHandler(meta=>{alert('読み込み完了\n総件数: '+meta.total+'\n3語: '+meta.three+'\n4語: '+meta.four);google.script.host.close()}).withFailureHandler(err=>alert(err.message||err)).sbosImportDriveFile(id)}
+function load(id){folderId=id||'';document.getElementById('msg').textContent='読み込み中…';google.script.run.withSuccessHandler(render).withFailureHandler(err).sbosListDriveFiles(folderId,pickerMode)}
+function render(payload){folderId=payload.folderId||'';parentId=payload.parentId||'';folderName=payload.folderName||'マイドライブ';document.getElementById('path').textContent=folderName;document.getElementById('upBtn').disabled=!folderId;document.getElementById('selectFolderBtn').style.display=pickerMode==='folder'?'inline-block':'none';const items=(payload.items||[]).filter(x=>pickerMode==='file'||pickerMode==='serp_result'||x.type==='folder');const el=document.getElementById('list');el.innerHTML='';items.forEach(x=>{const d=document.createElement('div');d.className='row';d.innerHTML='<span class="type">'+(x.type==='folder'?'フォルダー':'ファイル')+'</span><span class="name"></span>';d.querySelector('.name').textContent=x.name;d.onclick=()=>x.type==='folder'?load(x.id):choose(x.id,x.name);el.appendChild(d)});document.getElementById('msg').textContent=items.length+'件'}
+function choose(id,name){
+  if(pickerMode==='folder')return;
+  document.getElementById('msg').textContent='「'+name+'」を読み込み中…';
+  if(pickerMode==='serp_result'){
+    google.script.run.withSuccessHandler(meta=>{
+      document.getElementById('msg').textContent='登録完了';
+      alert('SERP精査結果を登録しました\n反映: '+meta.applied+'件\nGREEN: '+meta.green+'\nYELLOW: '+meta.yellow+'\nBLOCK: '+meta.block+'\nIntent統合: '+meta.clustered+'件');
+      google.script.host.close();
+    }).withFailureHandler(err=>{document.getElementById('msg').textContent='エラー';alert(err.message||err)}).sbosImportSerpReviewResult(id);
+    return;
+  }
+  google.script.run.withSuccessHandler(meta=>{
+    document.getElementById('msg').textContent='読み込み完了';
+    alert('読み込み完了\n総件数: '+meta.total+'\n3語: '+meta.three+'\n4語: '+meta.four);
+    google.script.host.close();
+  }).withFailureHandler(err=>{document.getElementById('msg').textContent='エラー';alert(err.message||err)}).sbosImportDriveFile(id)
+}
 function selectCurrentFolder(){document.getElementById('msg').textContent='保存先を設定中…';google.script.run.withSuccessHandler(meta=>{alert('保存先を設定しました\n'+meta.folderName);google.script.host.close()}).withFailureHandler(err=>alert(err.message||err)).sbosSetOutputFolder(folderId,folderName)}
 function goRoot(){load('')} function goUp(){load(parentId||'')} function err(e){document.getElementById('msg').textContent=e.message||e} load('');
 </script></body></html>

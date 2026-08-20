@@ -1,11 +1,21 @@
-# CHANGELOG
+# Changelog
 
-## v0.1.5 - 2026-08-21
+## v0.1.6 - 2026-08-21
 
-- SERP精査依頼Package生成を追加。
-- ChatGPT Web精査用のMarkdown依頼書とJSON契約をZIPへ同梱。
-- SERP_REVIEW_REQUEST_V1 契約を追加。
-- Google Drive保存先フォルダー選択をDrivePicker UIへ統合。
-- SERP Provider既定値を CHATGPT_PACKAGE に変更。
-- SERP精査前のGREEN確定禁止を継続。
-- メニューを 1:読込 → 2:探索 → 3:SERP Package → 4:候補確認 → 5:Writer依頼 に更新。
+### Added
+- Google Drive selection flow for ChatGPT SERP review result JSON.
+- `4. SERP精査結果を登録する` menu action.
+- Import/validation for `SIMS_BOS_SERP_REVIEW_RESULT_V1`.
+- Automatic reflection of SERP decision, Blue Ocean Score and Evidence Summary into Candidates.
+- Hidden `_SerpReview` archive sheet preserving the complete SERP review result.
+- `CANNIBAL_PENDING` guard state for SERP GREEN candidates.
+
+### Improved
+- Intent normalization now treats charging-context standalone `0` and `0パーセント` as the same zero-battery intent.
+- `nfc 設定 どこ` and `nfc どこ` are normalized to the same location intent.
+- Post-review duplicate Intent candidates are consolidated and blocked from separate article creation.
+- Candidate status coloring distinguishes cannibalization-pending, YELLOW and BLOCK states.
+
+### Validation
+- JavaScript syntax check passed for `Code.gs`.
+- Regression check confirmed the two duplicate Intent pairs found in the first iPhone 17 SERP review are now clustered together.
