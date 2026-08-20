@@ -1,60 +1,49 @@
-# SIMS Blue Ocean Screener v0.1.2
+# SIMS Blue Ocean Screener v0.1.3
 
-## Distribution type
+Complete Single-Code distribution for the first runtime test.
 
-Single-Code distribution for easier SIMS maintenance and updates.
+## Important change from v0.1.2
 
-Apps Script source is consolidated into **one `Code.gs`**. `DrivePicker.html` remains separate because the Google Apps Script HTML service requires it as an HTML file.
+The Google Drive file picker UI is now embedded directly in `Code.gs`.
+**Do not create `DrivePicker.html`.** Only `Code.gs` is required for the application source.
 
-## Files to add to Apps Script
+This fixes the runtime error:
 
-- `Code.gs` — all Apps Script runtime code
-- `DrivePicker.html` — Google Drive keyword-file picker UI
-- `appsscript.json` — manifest (only when manifest editing/import is used)
+`Exception: 「DrivePicker」というHTMLファイルは見つかりませんでした。`
 
-`README-FIRST.md` and `CHANGELOG.md` are repository/distribution documentation and do not need to be added to the Apps Script editor.
+## Files
 
-## v0.1.2 runtime scope
+- `Code.gs` — complete application source including the Drive picker UI
+- `appsscript.json` — optional manifest reference
+- `README-FIRST.md`
+- `CHANGELOG.md`
 
-- SIMS-style numbered menu
-- Google Drive file picker with folder navigation and "one level up"
-- CSV/TSV import
-- UTF-8 / UTF-16LE / UTF-16BE BOM handling
-- Rakko Keyword UTF-16 tab-separated export support
-- automatic 3-word / 4-word counting when no word-count column exists
-- normalization and preliminary intent clustering
-- preliminary screening
-- Candidates sheet generation
-- separate `Pre Score` and unconfirmed `Blue Ocean Score`
-- Writer referral generation only after a candidate is confirmed GREEN
-- processing-state persistence skeleton
+## Apps Script replacement instructions
 
-## Intentionally not yet connected
+If v0.1.2 is already installed:
 
-- live SERP provider and final Blue Ocean Score
-- automatic SIMS Evidence ZIP import
-- full existing-article cannibalization diagnosis
-- external demand validation of generated four-word keywords
-- output-folder picker
+1. Open Apps Script.
+2. Replace the entire contents of `Code.gs` with the v0.1.3 `Code.gs`.
+3. If a `DrivePicker.html` file was created previously, it may be deleted; v0.1.3 does not use it.
+4. Save the project.
+5. Return to the spreadsheet and reload the browser tab.
+6. Confirm the `SIMS Blue Ocean Screener` menu appears.
+7. Run `1. キーワードファイルを読み込む`.
 
-No direct Google Search scraping is implemented.
+## First runtime test target
 
-## First runtime regression test
-
-Use:
-
-`rakkokeyword_suggestKeywords_iPhone17_2026-08-20_20-36-03.csv`
-
-Expected import counts:
+Using the uploaded Rakko Keyword iPhone 17 dataset, the expected counts are:
 
 - Total: **993**
 - 3-word: **281**
 - 4-word: **41**
 
-## Update procedure
+## Runtime scope
 
-For v0.1.2, ordinary source updates should require replacing **`Code.gs` only** unless the Drive picker UI itself changed. Replace `DrivePicker.html` only when explicitly instructed.
+The current runtime scope covers Drive file selection, CSV/TSV import including UTF-16 tab-separated exports, normalization, word-count extraction, preliminary intent clustering, preliminary screening, Candidates display, and the Writer referral skeleton.
 
-## Release rule
+Actual SERP evaluation, SIMS Evidence automatic import, full cannibalization evaluation, and verified 4-word expansion remain later implementation stages. Candidates remain `PENDING` until final evidence checks are connected.
 
-If source code changes after this v0.1.2 artifact is issued, increase PATCH or higher. Do not reissue modified code under the same formal version.
+## Update policy
+
+From v0.1.3 onward, ordinary application updates should normally require replacing **`Code.gs` only**.
