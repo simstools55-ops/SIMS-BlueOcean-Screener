@@ -1,15 +1,7 @@
-# CHANGELOG
+# Changelog
 
-## v0.1.3 - 2026-08-21
-
-- Embed the complete Google Drive picker HTML/CSS/JavaScript into `Code.gs`.
-- Remove the runtime dependency on `DrivePicker.html`.
-- Fix first-runtime error when only `Code.gs` was installed: `DrivePicker` HTML file not found.
-- Establish complete Single-Code distribution: ordinary Apps Script source replacement is `Code.gs` only.
-- Keep v0.1.2 candidate-column fix and Pre Score / Blue Ocean Score separation.
-
-## v0.1.2 - 2026-08-20
-
-- Consolidated Apps Script `.gs` runtime modules into `Code.gs`.
-- Fixed Candidates range width mismatch.
-- Prepared first runtime-test baseline.
+## v0.1.4
+- Drive Pickerを埋め込みHTMLから `DrivePicker.html` 方式へ戻した。
+- v0.1.3でダイアログ内のDrive一覧が表示されない実機不具合を修正。
+- Apps Scriptの処理ロジックは引き続き `Code.gs` 1本へ統合。
+- Drive PickerはUI部品として別HTMLファイルに限定。

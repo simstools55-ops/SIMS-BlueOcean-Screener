@@ -1,49 +1,25 @@
-# SIMS Blue Ocean Screener v0.1.3
+# SIMS Blue Ocean Screener v0.1.4
 
-Complete Single-Code distribution for the first runtime test.
+## Apps Scriptへ入れるファイル
 
-## Important change from v0.1.2
+- `Code.gs` — Apps Script本体。SIMSの処理コードはこの1本に統合しています。
+- `DrivePicker.html` — Google Driveファイル選択ダイアログ専用の画面部品です。
+- `appsscript.json` — マニフェスト。
 
-The Google Drive file picker UI is now embedded directly in `Code.gs`.
-**Do not create `DrivePicker.html`.** Only `Code.gs` is required for the application source.
+## v0.1.3からの更新
 
-This fixes the runtime error:
+1. `Code.gs` をv0.1.4へ丸ごと置換してください。
+2. Apps Scriptの「＋」→「HTML」で `DrivePicker` を作成し、`DrivePicker.html` の内容を丸ごと貼り付けてください。
+3. 保存後、スプレッドシートを再読み込みしてください。
 
-`Exception: 「DrivePicker」というHTMLファイルは見つかりませんでした。`
+`DrivePicker.html` は処理ロジックではなくUI部品です。通常のSIMSロジック更新は引き続き `Code.gs` 1本の置換を基本とします。
 
-## Files
+## 第1実機試験
 
-- `Code.gs` — complete application source including the Drive picker UI
-- `appsscript.json` — optional manifest reference
-- `README-FIRST.md`
-- `CHANGELOG.md`
+SIMS Blue Ocean Screener → `1. キーワードファイルを読み込む` を実行し、Google Driveのフォルダー・CSVファイル一覧が表示されることを確認してください。
 
-## Apps Script replacement instructions
+今回のラッコキーワードCSVを選択した場合の期待値:
 
-If v0.1.2 is already installed:
-
-1. Open Apps Script.
-2. Replace the entire contents of `Code.gs` with the v0.1.3 `Code.gs`.
-3. If a `DrivePicker.html` file was created previously, it may be deleted; v0.1.3 does not use it.
-4. Save the project.
-5. Return to the spreadsheet and reload the browser tab.
-6. Confirm the `SIMS Blue Ocean Screener` menu appears.
-7. Run `1. キーワードファイルを読み込む`.
-
-## First runtime test target
-
-Using the uploaded Rakko Keyword iPhone 17 dataset, the expected counts are:
-
-- Total: **993**
-- 3-word: **281**
-- 4-word: **41**
-
-## Runtime scope
-
-The current runtime scope covers Drive file selection, CSV/TSV import including UTF-16 tab-separated exports, normalization, word-count extraction, preliminary intent clustering, preliminary screening, Candidates display, and the Writer referral skeleton.
-
-Actual SERP evaluation, SIMS Evidence automatic import, full cannibalization evaluation, and verified 4-word expansion remain later implementation stages. Candidates remain `PENDING` until final evidence checks are connected.
-
-## Update policy
-
-From v0.1.3 onward, ordinary application updates should normally require replacing **`Code.gs` only**.
+- 総件数: 993
+- 3語: 281
+- 4語: 41

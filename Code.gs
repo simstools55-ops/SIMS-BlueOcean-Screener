@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.1.3
+ * SIMS Blue Ocean Screener v0.1.4
  * Complete Single-Code distribution.
  * First runtime-test baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.1.3
+ * SIMS Blue Ocean Screener v0.1.4
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.3';
+const SBOS_VERSION = '0.1.4';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -107,7 +107,7 @@ function sbosShowSiteSettings() {
 }
 
 function sbosShowOutputSettings() {
-  SpreadsheetApp.getUi().alert('v0.1.3では保存先設定欄を用意済みです。Driveフォルダー選択UIは次の実装工程で接続します。');
+  SpreadsheetApp.getUi().alert('v0.1.4では保存先設定欄を用意済みです。Driveフォルダー選択UIは次の実装工程で接続します。');
 }
 
 function sbosGetSetting_(key) {
@@ -129,28 +129,9 @@ function sbosSetSetting_(key, value) {
 // Google Drive Picker Server
 // Source consolidated from: DrivePicker.gs
 // ============================================================================
-function sbosDrivePickerHtml_() {
-  return `<!doctype html>
-<html><head><base target="_top"><style>
-body{font-family:Arial,sans-serif;margin:0;color:#202124} .bar{padding:10px 14px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center}
-#path{flex:1;font-size:13px;color:#5f6368}.list{height:380px;overflow:auto}.row{padding:10px 14px;border-bottom:1px solid #eee;cursor:pointer;display:flex;gap:10px}.row:hover{background:#f6f8fa}.name{flex:1}.type{width:70px;color:#777;font-size:12px}.footer{padding:10px 14px;border-top:1px solid #ddd;text-align:right}button{padding:7px 14px}
-</style></head><body>
-<div class="bar"><button onclick="goRoot()">ルート</button><button id="upBtn" onclick="goUp()" disabled>一つ上へ</button><span id="path">マイドライブ</span></div>
-<div id="list" class="list"></div>
-<div class="footer"><span id="msg"></span> <button onclick="google.script.host.close()">閉じる</button></div>
-<script>
-let folderId=''; let parentId='';
-function load(id){folderId=id||'';document.getElementById('msg').textContent='読み込み中…';google.script.run.withSuccessHandler(render).withFailureHandler(err).sbosListDriveFiles(folderId)}
-function render(payload){folderId=payload.folderId||'';parentId=payload.parentId||'';document.getElementById('path').textContent=payload.folderName||'マイドライブ';document.getElementById('upBtn').disabled=!folderId;const items=payload.items||[];const el=document.getElementById('list');el.innerHTML='';items.forEach(x=>{const d=document.createElement('div');d.className='row';d.innerHTML='<span class="type">'+(x.type==='folder'?'フォルダー':'ファイル')+'</span><span class="name"></span>';d.querySelector('.name').textContent=x.name;d.onclick=()=>x.type==='folder'?load(x.id):choose(x.id,x.name);el.appendChild(d)});document.getElementById('msg').textContent=items.length+'件'}
-function choose(id,name){document.getElementById('msg').textContent='「'+name+'」を読み込み中…';google.script.run.withSuccessHandler(meta=>{alert('読み込み完了\n総件数: '+meta.total+'\n3語: '+meta.three+'\n4語: '+meta.four);google.script.host.close()}).withFailureHandler(err=>alert(err.message||err)).sbosImportDriveFile(id)}
-function goRoot(){load('')} function goUp(){load(parentId||'')} function err(e){document.getElementById('msg').textContent=e.message||e} load('');
-</script></body></html>
-`;
-}
-
 function sbosShowDrivePicker() {
   sbosEnsureSheets_();
-  const html = HtmlService.createHtmlOutput(sbosDrivePickerHtml_())
+  const html = HtmlService.createHtmlOutputFromFile('DrivePicker')
     .setWidth(760)
     .setHeight(520);
   SpreadsheetApp.getUi().showModalDialog(html, '1. キーワードファイルを読み込む');
@@ -190,7 +171,7 @@ function sbosImportDriveFile(fileId) {
   const file = DriveApp.getFileById(fileId);
   const name = file.getName();
   if (/\.xlsx$/i.test(name)) {
-    throw new Error('v0.1.3ではXLSXの直接読込は未実装です。CSV/TSVで保存して選択してください。');
+    throw new Error('v0.1.4ではXLSXの直接読込は未実装です。CSV/TSVで保存して選択してください。');
   }
   const blob = file.getBlob();
   const bytes = blob.getBytes();
@@ -414,7 +395,7 @@ function sbosApplyCandidateFormatting_() {
 // ============================================================================
 /**
  * SERP evaluator adapter.
- * v0.1.3 deliberately does NOT scrape Google Search directly.
+ * v0.1.4 deliberately does NOT scrape Google Search directly.
  * A provider can be connected later through Settings / Script Properties.
  */
 function sbosEvaluateSerpCandidate_(candidate) {
@@ -422,7 +403,7 @@ function sbosEvaluateSerpCandidate_(candidate) {
   if (provider === 'NONE') {
     return {status:'PENDING', score:null, evidence:'SERP Provider未設定'};
   }
-  throw new Error('SERP Provider「' + provider + '」はv0.1.3で未実装です。');
+  throw new Error('SERP Provider「' + provider + '」はv0.1.4で未実装です。');
 }
 
 // ============================================================================
@@ -515,7 +496,7 @@ function sbosResumeBatch() {
     sbosRunScreening_();
     return;
   }
-  SpreadsheetApp.getUi().alert('現在の処理状態: ' + status + '\n\nv0.1.3ではSERP Provider接続前のため、SERP工程以降の自動再開はまだ行いません。');
+  SpreadsheetApp.getUi().alert('現在の処理状態: ' + status + '\n\nv0.1.4ではSERP Provider接続前のため、SERP工程以降の自動再開はまだ行いません。');
 }
 
 function sbosSetState_(key, value) {
