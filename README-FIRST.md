@@ -1,25 +1,35 @@
-# SIMS Blue Ocean Screener v0.1.4
+# SIMS Blue Ocean Screener v0.1.5
 
 ## Apps Scriptへ入れるファイル
 
-- `Code.gs` — Apps Script本体。SIMSの処理コードはこの1本に統合しています。
-- `DrivePicker.html` — Google Driveファイル選択ダイアログ専用の画面部品です。
+- `Code.gs` — Apps Script本体。処理ロジックはこの1本に統合しています。
+- `DrivePicker.html` — Google Driveのファイル／保存先フォルダー選択UIです。
 - `appsscript.json` — マニフェスト。
 
-## v0.1.3からの更新
+## v0.1.4からの更新
 
-1. `Code.gs` をv0.1.4へ丸ごと置換してください。
-2. Apps Scriptの「＋」→「HTML」で `DrivePicker` を作成し、`DrivePicker.html` の内容を丸ごと貼り付けてください。
-3. 保存後、スプレッドシートを再読み込みしてください。
+- `Code.gs` を丸ごと置換してください。
+- `DrivePicker.html` も丸ごと置換してください。
+- `appsscript.json` は変更ありません。
 
-`DrivePicker.html` は処理ロジックではなくUI部品です。通常のSIMSロジック更新は引き続き `Code.gs` 1本の置換を基本とします。
+## 新機能: SERP精査依頼Package
 
-## 第1実機試験
+一次選抜後、メニュー `3. SERP精査依頼Packageを作成する` から、PENDING候補をChatGPTでWeb精査するためのZIPを作成できます。
 
-SIMS Blue Ocean Screener → `1. キーワードファイルを読み込む` を実行し、Google Driveのフォルダー・CSVファイル一覧が表示されることを確認してください。
+ZIP内容:
 
-今回のラッコキーワードCSVを選択した場合の期待値:
+- `README-FIRST.md`
+- `SERP-REVIEW-REQUEST.md`
+- `SERP_REVIEW_REQUEST_V1.json`
 
-- 総件数: 993
-- 3語: 281
-- 4語: 41
+Package作成前に対象ブログとGoogle Drive保存先を設定します。保存先は `追加の操作 → 保存先を設定する` からWindows風Drive選択ダイアログで指定できます。
+
+## 実用試験の次の手順
+
+1. 一次選抜20件がある状態で `追加の操作 → 保存先を設定する` を実行。
+2. 保存先フォルダーを選択。
+3. `3. SERP精査依頼Packageを作成する` を実行。
+4. 完了ダイアログに表示されたZIPをChatGPTへそのままアップロード。
+5. ChatGPTにSERP精査を依頼。
+
+SERP段階のGREENは新記事作成の最終GREENではありません。後段のカニバリ検査を通過して最終確定します。

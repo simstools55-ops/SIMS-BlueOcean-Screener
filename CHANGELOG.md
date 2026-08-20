@@ -1,7 +1,11 @@
-# Changelog
+# CHANGELOG
 
-## v0.1.4
-- Drive Pickerを埋め込みHTMLから `DrivePicker.html` 方式へ戻した。
-- v0.1.3でダイアログ内のDrive一覧が表示されない実機不具合を修正。
-- Apps Scriptの処理ロジックは引き続き `Code.gs` 1本へ統合。
-- Drive PickerはUI部品として別HTMLファイルに限定。
+## v0.1.5 - 2026-08-21
+
+- SERP精査依頼Package生成を追加。
+- ChatGPT Web精査用のMarkdown依頼書とJSON契約をZIPへ同梱。
+- SERP_REVIEW_REQUEST_V1 契約を追加。
+- Google Drive保存先フォルダー選択をDrivePicker UIへ統合。
+- SERP Provider既定値を CHATGPT_PACKAGE に変更。
+- SERP精査前のGREEN確定禁止を継続。
+- メニューを 1:読込 → 2:探索 → 3:SERP Package → 4:候補確認 → 5:Writer依頼 に更新。

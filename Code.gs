@@ -1,10 +1,10 @@
 /**
- * SIMS Blue Ocean Screener v0.1.4
+ * SIMS Blue Ocean Screener v0.1.5
  * Complete Single-Code distribution.
  * First runtime-test baseline.
  *
- * Apps Script runtime modules and the Drive Picker UI are consolidated into this Code.gs.
- * No separate HTML file is required.
+ * Apps Script runtime modules are consolidated into this Code.gs.
+ * DrivePicker.html remains a dedicated UI component and supports both file and folder selection.
  */
 
 // ============================================================================
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.1.4
+ * SIMS Blue Ocean Screener v0.1.5
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.4';
+const SBOS_VERSION = '0.1.5';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -76,8 +76,9 @@ function sbosBuildMenu_() {
   ui.createMenu('SIMS Blue Ocean Screener')
     .addItem('1. キーワードファイルを読み込む', 'sbosShowDrivePicker')
     .addItem('2. ブルーオーシャン候補を探索する', 'sbosStartScreening')
-    .addItem('3. 候補を確認する', 'sbosOpenCandidates')
-    .addItem('4. Writer依頼文を作成する', 'sbosCreateWriterReferral')
+    .addItem('3. SERP精査依頼Packageを作成する', 'sbosCreateSerpReviewPackage')
+    .addItem('4. 候補を確認する', 'sbosOpenCandidates')
+    .addItem('5. Writer依頼文を作成する', 'sbosCreateWriterReferral')
     .addSeparator()
     .addSubMenu(
       ui.createMenu('追加の操作')
@@ -107,7 +108,7 @@ function sbosShowSiteSettings() {
 }
 
 function sbosShowOutputSettings() {
-  SpreadsheetApp.getUi().alert('v0.1.4では保存先設定欄を用意済みです。Driveフォルダー選択UIは次の実装工程で接続します。');
+  sbosShowDriveFolderPicker_();
 }
 
 function sbosGetSetting_(key) {
@@ -131,10 +132,24 @@ function sbosSetSetting_(key, value) {
 // ============================================================================
 function sbosShowDrivePicker() {
   sbosEnsureSheets_();
-  const html = HtmlService.createHtmlOutputFromFile('DrivePicker')
-    .setWidth(760)
-    .setHeight(520);
+  const template = HtmlService.createTemplateFromFile('DrivePicker');
+  template.pickerMode = 'file';
+  const html = template.evaluate().setWidth(760).setHeight(520);
   SpreadsheetApp.getUi().showModalDialog(html, '1. キーワードファイルを読み込む');
+}
+
+function sbosShowDriveFolderPicker_() {
+  sbosEnsureSheets_();
+  const template = HtmlService.createTemplateFromFile('DrivePicker');
+  template.pickerMode = 'folder';
+  const html = template.evaluate().setWidth(760).setHeight(520);
+  SpreadsheetApp.getUi().showModalDialog(html, '保存先フォルダーを選ぶ');
+}
+
+function sbosSetOutputFolder(folderId, folderName) {
+  sbosSetSetting_('output_folder_id', String(folderId || ''));
+  sbosSetSetting_('output_folder_name', String(folderName || 'マイドライブ'));
+  return {folderId:String(folderId || ''), folderName:String(folderName || 'マイドライブ')};
 }
 
 function sbosListDriveFiles(folderId) {
@@ -171,7 +186,7 @@ function sbosImportDriveFile(fileId) {
   const file = DriveApp.getFileById(fileId);
   const name = file.getName();
   if (/\.xlsx$/i.test(name)) {
-    throw new Error('v0.1.4ではXLSXの直接読込は未実装です。CSV/TSVで保存して選択してください。');
+    throw new Error('v0.1.5ではXLSXの直接読込は未実装です。CSV/TSVで保存して選択してください。');
   }
   const blob = file.getBlob();
   const bytes = blob.getBytes();
@@ -390,6 +405,214 @@ function sbosApplyCandidateFormatting_() {
 }
 
 // ============================================================================
+// SERP Review Package
+// ============================================================================
+function sbosCreateSerpReviewPackage() {
+  sbosEnsureSheets_();
+  const ui = SpreadsheetApp.getUi();
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+  if (!sh || sh.getLastRow() < 2) {
+    ui.alert('SERP精査対象がありません', '先に「2. ブルーオーシャン候補を探索する」を実行してください。', ui.ButtonSet.OK);
+    return;
+  }
+
+  let siteName = sbosGetSetting_('site_name');
+  let siteUrl = sbosGetSetting_('site_url');
+  if (!siteName || !siteUrl) {
+    const r = ui.alert(
+      '対象ブログが未設定です',
+      'SERP精査ではブログとの適合性も評価します。今ここで対象ブログを設定しますか？',
+      ui.ButtonSet.YES_NO
+    );
+    if (r !== ui.Button.YES) return;
+    sbosShowSiteSettings();
+    siteName = sbosGetSetting_('site_name');
+    siteUrl = sbosGetSetting_('site_url');
+    if (!siteName || !siteUrl) return;
+  }
+
+  const folderId = sbosGetSetting_('output_folder_id');
+  const folderName = sbosGetSetting_('output_folder_name');
+  if (!folderId && !folderName) {
+    ui.alert(
+      '保存先が未設定です',
+      '「追加の操作 → 保存先を設定する」でGoogle Driveの保存先フォルダーを選んでから、もう一度実行してください。',
+      ui.ButtonSet.OK
+    );
+    sbosShowDriveFolderPicker_();
+    return;
+  }
+
+  const values = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
+  const candidates = values.filter(r => r[12] === 'PENDING' || r[12] === 'REQUESTED').map(r => ({
+    rank: Number(r[0]) || 0,
+    main_keyword: r[2],
+    words: Number(r[3]) || 0,
+    pre_score: Number(r[4]) || 0,
+    search_intent: r[7],
+    source: r[9],
+    intent_key: r[11]
+  }));
+  if (!candidates.length) {
+    ui.alert('Package対象がありません', 'PENDINGのSERP候補がありません。', ui.ButtonSet.OK);
+    return;
+  }
+
+  const requestId = 'SBOS-SERP-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
+  const inputFile = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B4').getDisplayValue();
+  const payload = {
+    format: 'SIMS_BOS_SERP_REVIEW_REQUEST_V1',
+    contract_version: '1.0',
+    product: SBOS_PRODUCT_NAME,
+    product_version: SBOS_VERSION,
+    request_id: requestId,
+    generated_at: sbosNow_(),
+    site: {name: siteName, url: siteUrl},
+    input_file: inputFile,
+    candidate_count: candidates.length,
+    evaluation_policy: {
+      purpose: '個人ブログが上位表示を狙える3語・4語ロングテールのBlue Ocean候補を実SERPで精査する',
+      do_not_assume_volume_zero_means_no_demand: true,
+      require_web_verification: true,
+      do_not_finalize_article_green_before_cannibalization_check: true
+    },
+    candidates: candidates
+  };
+
+  const md = sbosBuildSerpReviewRequestMarkdown_(payload);
+  const json = JSON.stringify(payload, null, 2);
+  const readme = sbosBuildSerpPackageReadme_(payload);
+  const blobs = [
+    Utilities.newBlob(readme, 'text/markdown', 'README-FIRST.md'),
+    Utilities.newBlob(md, 'text/markdown', 'SERP-REVIEW-REQUEST.md'),
+    Utilities.newBlob(json, 'application/json', 'SERP_REVIEW_REQUEST_V1.json')
+  ];
+  const safeSite = sbosSafeFilename_(siteName || 'Unassigned-Site');
+  const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
+  const zipName = 'SIMS-Blue-Ocean-Screener-' + safeSite + '-ChatGPT-SERP-Review-' + stamp + '.zip';
+  const zipBlob = Utilities.zip(blobs, zipName);
+  const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+  const file = folder.createFile(zipBlob);
+
+  for (let i = 0; i < values.length; i++) {
+    if (values[i][12] === 'PENDING') sh.getRange(i + 2, 13).setValue('REQUESTED');
+  }
+  sbosSetState_('serp_request_id', requestId);
+  sbosSetState_('serp_package_file_id', file.getId());
+  sbosSetState_('serp_package_file_name', zipName);
+  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('SERP精査依頼Package作成済み');
+
+  ui.alert(
+    'SERP精査依頼Packageを作成しました',
+    '候補: ' + candidates.length + '件\n' +
+    'ファイル名: ' + zipName + '\n' +
+    '保存先: ' + (folderName || folder.getName() || 'マイドライブ') + '\n\n' +
+    '次に、このZIPをChatGPTへそのままアップロードしてSERP精査を依頼してください。',
+    ui.ButtonSet.OK
+  );
+}
+
+function sbosBuildSerpPackageReadme_(p) {
+  return [
+    '# SIMS Blue Ocean Screener SERP Review Package',
+    '',
+    '- Request ID: ' + p.request_id,
+    '- Site: ' + p.site.name,
+    '- Candidates: ' + p.candidate_count,
+    '',
+    '## 利用方法',
+    '',
+    'このZIPをChatGPTへそのままアップロードし、次のように依頼してください。',
+    '',
+    '「SIMS Blue Ocean ScreenerのSERP精査依頼Packageです。Web検索で全候補を検証し、依頼書の契約に従って判定してください。」',
+    '',
+    'ChatGPTはSERPの実検索を行い、読みやすい診断結果と SIMS_BOS_SERP_REVIEW_RESULT_V1 JSON を返します。',
+    '新記事の最終GREENは、このSERP精査だけでは確定しません。後段のカニバリ検査を通過して確定します。'
+  ].join('\n');
+}
+
+function sbosBuildSerpReviewRequestMarkdown_(p) {
+  const lines = [
+    '# SIMS Blue Ocean Screener SERP精査依頼',
+    '',
+    '## Request',
+    '',
+    '- request_id: `' + p.request_id + '`',
+    '- site: ' + p.site.name,
+    '- site_url: ' + p.site.url,
+    '- candidates: ' + p.candidate_count,
+    '',
+    '## 目的',
+    '',
+    '各候補を実際にWeb検索し、個人ブログが狙えるBlue Oceanかを評価してください。検索ボリュームだけで判断せず、実SERPの競合状況と検索意図の空白を重視してください。',
+    '',
+    '## 各候補で確認する項目',
+    '',
+    '- 検索意図が明確か',
+    '- 上位結果にその検索意図専用の記事が何件あるか',
+    '- 企業・公式・大手メディアによる占有度',
+    '- 個人ブログ、Q&A、フォーラム等が上位に混在するか',
+    '- 古い情報や検索意図ズレが残っているか',
+    '- 対象ブログとのテーマ適合性',
+    '- 3語が強い場合、自然な4語深掘り候補があるか',
+    '',
+    '## 判定',
+    '',
+    '- GREEN: SERP上は有望。後段のカニバリ検査へ送る',
+    '- YELLOW: 需要はあるが競合・意図・Evidenceに不確実性がある',
+    '- BLOCK: SERP競合が強い、検索意図が成立しにくい、または新記事候補として弱い',
+    '',
+    '注意: GREENは「SERP段階のGREEN」です。既存記事とのカニバリ検査前なので、新記事作成を最終確定しないでください。',
+    '',
+    '## 返却JSON',
+    '',
+    '最後に次の契約名のJSONを返してください。',
+    '',
+    '`SIMS_BOS_SERP_REVIEW_RESULT_V1`',
+    '',
+    '必須フィールド:',
+    '',
+    '- format',
+    '- contract_version',
+    '- request_id',
+    '- reviewed_at',
+    '- results[]',
+    '  - rank',
+    '  - main_keyword',
+    '  - serp_decision (GREEN / YELLOW / BLOCK)',
+    '  - blue_ocean_score (0-100)',
+    '  - evidence_summary',
+    '  - exact_or_near_exact_competitors',
+    '  - big_site_pressure (LOW / MEDIUM / HIGH)',
+    '  - intent_gap (LOW / MEDIUM / HIGH)',
+    '  - personal_blog_chance (LOW / MEDIUM / HIGH)',
+    '  - suggested_four_word_queries[]',
+    '  - sources[]',
+    '',
+    '## Candidates',
+    ''
+  ];
+  p.candidates.forEach(c => {
+    lines.push('### #' + c.rank + ' ' + c.main_keyword);
+    lines.push('- words: ' + c.words);
+    lines.push('- pre_score: ' + c.pre_score);
+    lines.push('- source: ' + c.source);
+    lines.push('- intent: ' + c.search_intent);
+    lines.push('- intent_key: ' + c.intent_key);
+    lines.push('');
+  });
+  return lines.join('\n');
+}
+
+function sbosSafeFilename_(s) {
+  return String(s || '')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '') || 'Site';
+}
+
+// ============================================================================
 // SERP Evaluation Adapter
 // Source consolidated from: SerpEvaluator.gs
 // ============================================================================
@@ -399,11 +622,11 @@ function sbosApplyCandidateFormatting_() {
  * A provider can be connected later through Settings / Script Properties.
  */
 function sbosEvaluateSerpCandidate_(candidate) {
-  const provider = sbosGetSetting_('serp_provider') || 'NONE';
-  if (provider === 'NONE') {
-    return {status:'PENDING', score:null, evidence:'SERP Provider未設定'};
+  const provider = sbosGetSetting_('serp_provider') || 'CHATGPT_PACKAGE';
+  if (provider === 'NONE' || provider === 'CHATGPT_PACKAGE') {
+    return {status:'PENDING', score:null, evidence:'ChatGPT SERP精査結果待ち'};
   }
-  throw new Error('SERP Provider「' + provider + '」はv0.1.4で未実装です。');
+  throw new Error('SERP Provider「' + provider + '」はv0.1.5で未実装です。');
 }
 
 // ============================================================================
@@ -458,7 +681,7 @@ function sbosCreateWriterReferral() {
     '<div style="font-family:Arial;padding:14px"><h3>Writer依頼文</h3><textarea style="width:100%;height:360px">' +
     sbosEscapeHtml_(text) + '</textarea><p>全文をコピーしてWriterへ渡してください。</p></div>'
   ).setWidth(760).setHeight(520);
-  SpreadsheetApp.getUi().showModalDialog(html, '4. Writer依頼文を作成する');
+  SpreadsheetApp.getUi().showModalDialog(html, '5. Writer依頼文を作成する');
   sh.getRange(row,11).setValue('作成済み');
 }
 
@@ -496,7 +719,7 @@ function sbosResumeBatch() {
     sbosRunScreening_();
     return;
   }
-  SpreadsheetApp.getUi().alert('現在の処理状態: ' + status + '\n\nv0.1.4ではSERP Provider接続前のため、SERP工程以降の自動再開はまだ行いません。');
+  SpreadsheetApp.getUi().alert('現在の処理状態: ' + status + '\n\nv0.1.5ではSERP精査依頼Package作成後、ChatGPTでのWeb検証結果を戻す工程は次版で接続します。');
 }
 
 function sbosSetState_(key, value) {
@@ -569,17 +792,23 @@ function sbosInitHome_() {
 
 function sbosInitSettings_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.SETTINGS);
-  if (sh.getLastRow() > 0 && sh.getRange('A1').getValue()) return;
-  sh.clear();
-  sh.getRange('A1:B6').setValues([
-    ['Setting', 'Value'],
+  if (!(sh.getLastRow() > 0 && sh.getRange('A1').getValue())) {
+    sh.clear();
+    sh.getRange('A1:B1').setValues([['Setting', 'Value']]);
+    sh.getRange('A1:B1').setFontWeight('bold');
+  }
+  const defaults = [
     ['site_name', ''],
     ['site_url', ''],
     ['output_folder_id', ''],
-    ['serp_provider', 'NONE'],
+    ['output_folder_name', ''],
+    ['serp_provider', 'CHATGPT_PACKAGE'],
     ['serp_api_key', '']
-  ]);
-  sh.getRange('A1:B1').setFontWeight('bold');
+  ];
+  const existing = sh.getLastRow() > 1 ? sh.getRange(2,1,sh.getLastRow()-1,2).getDisplayValues() : [];
+  const keys = new Set(existing.map(r => r[0]));
+  defaults.forEach(r => { if (!keys.has(r[0])) sh.appendRow(r); });
+  if ((sbosGetSetting_('serp_provider') || 'NONE') === 'NONE') sbosSetSetting_('serp_provider', 'CHATGPT_PACKAGE');
 }
 
 function sbosInitKeywords_() {
