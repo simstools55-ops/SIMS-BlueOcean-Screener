@@ -1,6 +1,6 @@
 # Changelog
-
-## v0.1.10
-- Added missing `sbosSafeFilePart_()` helper.
-- Fixed cannibal review package ZIP-name generation.
-- Verified that no other referenced `sbos...` functions are undefined.
+## v0.1.11
+- Added cannibal review result JSON import.
+- Added request ID validation.
+- Added final candidate decision and cannibalization registration.
+- Enriched Creator referral with article scope, existing article boundaries, matched articles and internal-link candidates.

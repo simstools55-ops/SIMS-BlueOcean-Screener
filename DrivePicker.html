@@ -9,7 +9,7 @@ body{font-family:Arial,sans-serif;margin:0;color:#202124} .bar{padding:10px 14px
 <script>
 const pickerMode='<?!= pickerMode ?>'; let folderId=''; let parentId=''; let folderName='マイドライブ';
 function load(id){folderId=id||'';document.getElementById('msg').textContent='読み込み中…';google.script.run.withSuccessHandler(render).withFailureHandler(err).sbosListDriveFiles(folderId,pickerMode)}
-function render(payload){folderId=payload.folderId||'';parentId=payload.parentId||'';folderName=payload.folderName||'マイドライブ';document.getElementById('path').textContent=folderName;document.getElementById('upBtn').disabled=!folderId;document.getElementById('selectFolderBtn').style.display=pickerMode==='folder'?'inline-block':'none';const items=(payload.items||[]).filter(x=>pickerMode==='file'||pickerMode==='serp_result'||pickerMode==='cannibal_evidence'||x.type==='folder');const el=document.getElementById('list');el.innerHTML='';items.forEach(x=>{const d=document.createElement('div');d.className='row';d.innerHTML='<span class="type">'+(x.type==='folder'?'フォルダー':'ファイル')+'</span><span class="name"></span>';d.querySelector('.name').textContent=x.name;d.onclick=()=>x.type==='folder'?load(x.id):choose(x.id,x.name);el.appendChild(d)});document.getElementById('msg').textContent=items.length+'件'}
+function render(payload){folderId=payload.folderId||'';parentId=payload.parentId||'';folderName=payload.folderName||'マイドライブ';document.getElementById('path').textContent=folderName;document.getElementById('upBtn').disabled=!folderId;document.getElementById('selectFolderBtn').style.display=pickerMode==='folder'?'inline-block':'none';const items=(payload.items||[]).filter(x=>pickerMode==='file'||pickerMode==='serp_result'||pickerMode==='cannibal_evidence'||pickerMode==='cannibal_result'||x.type==='folder');const el=document.getElementById('list');el.innerHTML='';items.forEach(x=>{const d=document.createElement('div');d.className='row';d.innerHTML='<span class="type">'+(x.type==='folder'?'フォルダー':'ファイル')+'</span><span class="name"></span>';d.querySelector('.name').textContent=x.name;d.onclick=()=>x.type==='folder'?load(x.id):choose(x.id,x.name);el.appendChild(d)});document.getElementById('msg').textContent=items.length+'件'}
 function choose(id,name){
   if(pickerMode==='folder')return;
   document.getElementById('msg').textContent='「'+name+'」を読み込み中…';
@@ -19,6 +19,17 @@ function choose(id,name){
       alert('SERP精査結果を登録しました\n反映: '+meta.applied+'件\nGREEN: '+meta.green+'\nYELLOW: '+meta.yellow+'\nBLOCK: '+meta.block+'\nIntent統合: '+meta.clustered+'件');
       google.script.host.close();
     }).withFailureHandler(err=>{document.getElementById('msg').textContent='エラー';alert(err.message||err)}).sbosImportSerpReviewResult(id);
+    return;
+  }
+  if(pickerMode==='cannibal_result'){
+    google.script.run.withSuccessHandler(meta=>{
+      document.getElementById('msg').textContent='登録完了';
+      alert('カニバリ精査結果を登録しました\n反映: '+meta.applied+'件\nGREEN: '+meta.green+'\nYELLOW: '+meta.yellow+'\nBLOCK: '+meta.block);
+      google.script.host.close();
+    }).withFailureHandler(err=>{
+      const detail=(err&&err.message)?err.message:String(err||'不明なエラー');
+      document.getElementById('msg').textContent='エラー: '+detail; alert(detail);
+    }).sbosImportCannibalReviewResult(id);
     return;
   }
   if(pickerMode==='cannibal_evidence'){

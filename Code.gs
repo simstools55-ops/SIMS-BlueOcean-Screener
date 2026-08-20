@@ -16,7 +16,7 @@
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.10';
+const SBOS_VERSION = '0.1.11';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -81,8 +81,9 @@ function sbosBuildMenu_() {
     .addItem('3. SERP精査依頼Packageを作成する', 'sbosCreateSerpReviewPackage')
     .addItem('4. SERP精査結果を登録する', 'sbosShowSerpResultPicker')
     .addItem('5. カニバリ精査Packageを作成する', 'sbosShowCannibalEvidencePicker')
-    .addItem('6. 候補を確認する', 'sbosOpenCandidates')
-    .addItem('7. Creator依頼文を作成する', 'sbosCreateCreatorReferral')
+    .addItem('6. カニバリ精査結果を登録する', 'sbosShowCannibalResultPicker')
+    .addItem('7. 候補を確認する', 'sbosOpenCandidates')
+    .addItem('8. Creator依頼文を作成する', 'sbosCreateCreatorReferral')
     .addSeparator()
     .addSubMenu(
       ui.createMenu('追加の操作')
@@ -175,6 +176,15 @@ function sbosShowCannibalEvidencePicker() {
   SpreadsheetApp.getUi().showModalDialog(html, '5. カニバリ精査用Evidenceを選ぶ');
 }
 
+
+function sbosShowCannibalResultPicker() {
+  sbosEnsureSheets_();
+  const template = HtmlService.createTemplateFromFile('DrivePicker');
+  template.pickerMode = 'cannibal_result';
+  const html = template.evaluate().setWidth(760).setHeight(520);
+  SpreadsheetApp.getUi().showModalDialog(html, '6. カニバリ精査結果を登録する');
+}
+
 function sbosSetOutputFolder(folderId, folderName) {
   sbosSetSetting_('output_folder_id', String(folderId || ''));
   sbosSetSetting_('output_folder_name', String(folderName || 'マイドライブ'));
@@ -196,7 +206,8 @@ function sbosListDriveFiles(folderId, pickerMode) {
     const name = f.getName();
     const isSerpResult = pickerMode === 'serp_result';
     const isCannibalEvidence = pickerMode === 'cannibal_evidence';
-    const ok = isSerpResult ? /\.json$/i.test(name)
+    const isCannibalResult = pickerMode === 'cannibal_result';
+    const ok = (isSerpResult || isCannibalResult) ? /\.json$/i.test(name)
       : (isCannibalEvidence ? /\.(zip|csv|tsv|json)$/i.test(name) : /\.(csv|tsv|xlsx)$/i.test(name));
     if (ok) result.push({type:'file', id:f.getId(), name:name, mime:f.getMimeType()});
   }
@@ -851,6 +862,80 @@ function sbosCannibalRisk_(keyword) {
 }
 
 
+
+function sbosImportCannibalReviewResult(fileId) {
+  sbosEnsureSheets_();
+  const file = DriveApp.getFileById(fileId);
+  if (!/\.json$/i.test(file.getName())) throw new Error('カニバリ精査結果はJSONファイルを選択してください。');
+  let payload;
+  try {
+    payload = JSON.parse(file.getBlob().getDataAsString('UTF-8').replace(/^\uFEFF/, ''));
+  } catch (e) {
+    throw new Error('JSONを解析できませんでした: ' + e.message);
+  }
+  if (!payload || payload.format !== 'SIMS_BOS_CANNIBAL_REVIEW_RESULT_V1') {
+    throw new Error('SIMS_BOS_CANNIBAL_REVIEW_RESULT_V1 形式の結果JSONではありません。');
+  }
+  if (!Array.isArray(payload.results) || !payload.results.length) throw new Error('results[] が空です。');
+
+  const expectedRequestId = sbosGetState_('cannibal_request_id') || '';
+  if (expectedRequestId && String(payload.request_id || '') !== expectedRequestId) {
+    throw new Error('request_idが一致しません。\n期待値: ' + expectedRequestId + '\n選択ファイル: ' + String(payload.request_id || '未設定'));
+  }
+
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+  if (!sh || sh.getLastRow() < 2) throw new Error('Candidatesシートに候補がありません。');
+  const data = sh.getRange(2,1,sh.getLastRow()-1,13).getValues();
+
+  const resultMap = new Map();
+  payload.results.forEach(r => {
+    const key = sbosKeywordMatchKey_(r.main_keyword || '');
+    if (!key) return;
+    if (resultMap.has(key)) throw new Error('結果JSONに同一main_keywordが重複しています: ' + r.main_keyword);
+    resultMap.set(key, r);
+  });
+
+  let applied=0;
+  const counts={GREEN:0,YELLOW:0,BLOCK:0};
+  const detail = {};
+  data.forEach(row => {
+    const key = sbosKeywordMatchKey_(row[2]);
+    const r = resultMap.get(key);
+    if (!r) return;
+    const d = String(r.decision || '').toUpperCase();
+    const can = String(r.cannibalization || '').toUpperCase();
+    if (!['GREEN','YELLOW','BLOCK'].includes(d)) throw new Error('不正なdecision: ' + d + ' / ' + r.main_keyword);
+    if (!['LOW','MEDIUM','HIGH'].includes(can)) throw new Error('不正なcannibalization: ' + can + ' / ' + r.main_keyword);
+    row[1] = d;
+    row[6] = can;
+    const add = String(r.evidence_summary || '');
+    if (add) row[8] = String(row[8] || '') + (row[8] ? '\n\n[Cannibal Review] ' : '[Cannibal Review] ') + add;
+    counts[d]++;
+    applied++;
+    detail[key] = r;
+  });
+  if (!applied) throw new Error('Candidatesと一致するカニバリ精査結果がありませんでした。');
+  sh.getRange(2,1,data.length,13).setValues(data);
+  sbosApplyCandidateFormatting_();
+
+  sbosSetState_('cannibal_result_file_id', file.getId());
+  sbosSetState_('cannibal_review_result_json', JSON.stringify(detail));
+  sbosSetState_('status', counts.GREEN ? 'CANNIBAL_REVIEW_IMPORTED' : SBOS_STATUS.COMPLETE);
+  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('カニバリ精査結果登録済み');
+
+  return {applied:applied,green:counts.GREEN,yellow:counts.YELLOW,block:counts.BLOCK};
+}
+
+function sbosGetCannibalDetail_(keyword) {
+  const raw = sbosGetState_('cannibal_review_result_json') || '{}';
+  try {
+    const obj = JSON.parse(raw);
+    return obj[sbosKeywordMatchKey_(keyword)] || null;
+  } catch(e) {
+    return null;
+  }
+}
+
 // ============================================================================
 // Cannibal Review Package
 // ============================================================================
@@ -959,36 +1044,38 @@ function sbosCreateCreatorReferral() {
     '<div style="font-family:Arial;padding:14px"><h3>Creator依頼文</h3><textarea style="width:100%;height:360px">' +
     sbosEscapeHtml_(text) + '</textarea><p>全文をコピーしてSIMS Article Creatorへ渡してください。</p></div>'
   ).setWidth(760).setHeight(520);
-  SpreadsheetApp.getUi().showModalDialog(html, '7. Creator依頼文を作成する');
+  SpreadsheetApp.getUi().showModalDialog(html, '8. Creator依頼文を作成する');
   sh.getRange(row,11).setValue('作成済み');
 }
 
 function sbosBuildCreatorReferral_(v) {
+  const d = sbosGetCannibalDetail_(v[2]) || {};
+  const matched = Array.isArray(d.matched_articles) ? d.matched_articles : [];
+  const links = Array.isArray(d.internal_link_candidates) ? d.internal_link_candidates : [];
+  const matchedText = matched.length ? matched.map(x => {
+    if (typeof x === 'string') return '- ' + x;
+    return '- ' + (x.url || '') + (x.role ? ' — ' + x.role : '');
+  }).join('\n') : '- 直接競合する既存記事なし';
+  const linkText = links.length ? links.map(x => '- ' + x).join('\n') : '- 必須候補なし';
+
   return [
-    '# SIMS Article Creator 新記事作成依頼',
-    '',
-    '## メインキーワード', v[2],
-    '',
-    '## 語数', v[3] + '語',
-    '',
-    '## Blue Ocean Score', v[5],
-    '',
-    '## 検索意図', v[7],
-    '',
-    '## Blue Ocean Evidence', v[8],
-    '',
+    '# SIMS Article Creator 新記事作成依頼','',
+    '## メインキーワード', v[2],'',
+    '## 語数', v[3] + '語','',
+    '## Blue Ocean Score', v[5],'',
+    '## 最終判定', v[1] + ' / Cannibalization: ' + v[6],'',
+    '## 検索意図', v[7],'',
+    '## Blue Ocean / Cannibal Evidence', v[8],'',
     '## 新記事が担当する範囲',
-    'このキーワード固有の検索意図を中心に、新規記事として独立した価値を持つ範囲だけを扱ってください。',
-    '',
-    '## 既存記事との境界',
-    'カニバリ精査で確定した既存記事の担当領域を侵食しないでください。一般論へ広げすぎず、重複部分は必要最小限にしてください。',
-    '',
+    d.article_scope || 'このキーワード固有の検索意図に限定して新規記事として独立させてください.','',
+    '## 既存記事へ任せる範囲',
+    d.existing_article_boundary || '既存記事の担当検索意図を侵食しないでください.','',
+    '## 近接する既存記事', matchedText,'',
+    '## 内部リンク候補', linkText,'',
     '## カニバリ防止条件',
-    '既存記事が担当する検索意図を奪わず、必要に応じて既存記事へ内部リンクで役割分担してください。',
-    '',
+    '上記の担当境界を守り、既存記事が担当する検索意図を奪わないでください。重複する一般説明は必要最小限とし、近接記事とは内部リンクで役割分担してください。','',
     '## 事実確認',
-    '仕様・不具合・手順・価格・発売状況などは執筆時点の一次情報を優先してWeb確認し、未確認情報を断定しないでください。',
-    '',
+    '仕様・不具合・手順・価格・発売状況などは執筆時点の一次情報を優先してWeb確認し、未確認情報を断定しないでください。','',
     '## Creatorへの指示',
     'これは新規記事作成案件です。既存記事のリライト案件として処理しないでください。'
   ].join('\n');
