@@ -16,7 +16,7 @@
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.9';
+const SBOS_VERSION = '0.1.10';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -1122,6 +1122,17 @@ function sbosInitCandidates_() {
 
 function sbosOpenCandidates() {
   SpreadsheetApp.getActive().setActiveSheet(SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES));
+}
+
+
+function sbosSafeFilePart_(value) {
+  return String(value || 'Unknown-Site')
+    .normalize('NFKC')
+    .replace(/[\\/:*?"<>|]/g, '-')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80) || 'Unknown-Site';
 }
 
 // ============================================================================

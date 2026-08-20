@@ -1,14 +1,17 @@
-# SIMS Blue Ocean Screener v0.1.9
+# SIMS Blue Ocean Screener v0.1.10
 
-v0.1.8のカニバリ精査Evidence選択後に「エラー」とだけ表示される問題を修正。
+## 修正内容
+- カニバリ精査Package生成時の `sbosSafeFilePart_ is not defined` を修正。
+- ZIPファイル名用の安全化関数 `sbosSafeFilePart_()` を追加。
+- `sbos...` 系の関数参照を静的点検し、未定義関数が他にないことを確認。
 
-## 変更
-- HTMLダイアログから呼ばれるPackage生成処理内のSpreadsheet UI alertを廃止
-- Package生成処理を段階別に例外捕捉
-- エラー時に「処理段階」と「詳細」をDrivePicker画面とalertへ表示
-- Evidence ZIPをそのままカニバリ精査Packageへ同梱
-
-## v0.1.8からの置換
+## v0.1.9からの置換
 - Code.gs: 置換
-- DrivePicker.html: 置換
+- DrivePicker.html: 変更なし
 - appsscript.json: 変更なし
+
+## 再試験
+1. Code.gs を丸ごと置換
+2. 保存してスプレッドシートを再読み込み
+3. `5. カニバリ精査Packageを作成する`
+4. `SIMS-Evidence-スマホ生活ナビ-20260815-1545.zip` を選択

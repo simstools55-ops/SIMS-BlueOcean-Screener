@@ -1,5 +1,6 @@
 # Changelog
-## v0.1.9
-- Fixed cannibal review package generation from DrivePicker.
-- Removed nested Spreadsheet UI alert from HTML-invoked server flow.
-- Added stage-aware error diagnostics.
+
+## v0.1.10
+- Added missing `sbosSafeFilePart_()` helper.
+- Fixed cannibal review package ZIP-name generation.
+- Verified that no other referenced `sbos...` functions are undefined.
