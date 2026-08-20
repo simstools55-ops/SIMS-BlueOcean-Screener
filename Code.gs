@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.3.0
+ * SIMS Blue Ocean Screener v0.4.0
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.3.0
+ * SIMS Blue Ocean Screener v0.4.0
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.3.0';
+const SBOS_VERSION = '0.4.0';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -95,8 +95,21 @@ function sbosStatusCode_(value) {
 }
 
 function sbosSetHomeStatus_(text) {
+  sbosSetState_('home_status_text', String(text || ''));
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME);
-  if (sh) sh.getRange('B17').setValue(text || '');
+  if (sh) sh.getRange('C8').setValue(text || '未実行');
+}
+
+function sbosTidyDefaultSheets_() {
+  const ss = SpreadsheetApp.getActive();
+  const names = ['シート1','Sheet1'];
+  names.forEach(name => {
+    const sh = ss.getSheetByName(name);
+    if (!sh || ss.getSheets().length <= 1) return;
+    const hasValue = sh.getLastRow() > 0 && sh.getDataRange().getDisplayValues()
+      .some(row => row.some(v => String(v || '').trim() !== ''));
+    if (!hasValue) ss.deleteSheet(sh);
+  });
 }
 
 function sbosRefreshHomeSummary_() {
@@ -106,9 +119,11 @@ function sbosRefreshHomeSummary_() {
   const cand = ss.getSheetByName(SBOS_SHEETS.CANDIDATES);
   if (!home) return;
 
-  let existing4 = 0;
+  let total=0, three=0, existing4=0;
   if (kw && kw.getLastRow() >= 2) {
     const vals = kw.getRange(2,1,kw.getLastRow()-1,13).getDisplayValues();
+    total = vals.length;
+    three = vals.filter(r => Number(r[5]) === 3).length;
     existing4 = vals.filter(r => Number(r[5]) === 4).length;
   }
 
@@ -134,16 +149,24 @@ function sbosRefreshHomeSummary_() {
     });
   }
 
-  home.getRange('B7').setValue(existing4);
-  home.getRange('B8').setValue(generated4);
-  home.getRange('B9').setValue(serpWait);
-  home.getRange('B10').setValue(cannibalWait);
-  home.getRange('B11').setValue(green);
-  home.getRange('B12').setValue(yellow);
-  home.getRange('B13').setValue(block);
-  home.getRange('B14').setValue(clustered);
-  home.getRange('B15').setValue(creatorReady);
-  home.getRange('B16').setValue(creatorDone);
+  home.getRange('A11').setValue(total);
+  home.getRange('C11').setValue(three);
+  home.getRange('E11').setValue(existing4);
+  home.getRange('G11').setValue(generated4);
+
+  home.getRange('A15').setValue(serpWait);
+  home.getRange('C15').setValue(cannibalWait);
+  home.getRange('E15').setValue(green);
+  home.getRange('G15').setValue(creatorReady);
+
+  home.getRange('A20').setValue(yellow);
+  home.getRange('C20').setValue(block);
+  home.getRange('E20').setValue(clustered);
+  home.getRange('G20').setValue(creatorDone);
+
+  home.getRange('C6').setValue(sbosGetSetting_('site_name') || '未設定');
+  home.getRange('C7').setValue(sbosGetState_('input_file_name') || '未選択');
+  home.getRange('C8').setValue(sbosGetState_('home_status_text') || '未実行');
 }
 
 // ============================================================================
@@ -186,7 +209,7 @@ function sbosShowSiteSettings() {
   if (url.getSelectedButton() !== ui.Button.OK) return;
   sbosSetSetting_('site_name', name.getResponseText().trim());
   sbosSetSetting_('site_url', url.getResponseText().trim());
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B3').setValue(name.getResponseText().trim());
+  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('C6').setValue(name.getResponseText().trim());
 }
 
 function sbosShowOutputSettings() {
@@ -390,11 +413,7 @@ function sbosWriteImportedKeywords_(rows, meta) {
   if (values.length) sh.getRange(2,1,values.length,values[0].length).setValues(values);
   sbosMarkPrimaryCandidates_();
   const home = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME);
-  home.getRange('B4').setValue(meta.filename);
-  home.getRange('B5').setValue(meta.total);
-  home.getRange('B6').setValue(meta.three);
-  home.getRange('B7').setValue(meta.four);
-  home.getRange('B8').setValue(0);
+  sbosSetState_('input_file_name', meta.filename);
   sbosSetHomeStatus_('キーワード読込完了');
   sbosSetState_('status', SBOS_STATUS.IMPORT_DONE);
   sbosRefreshHomeSummary_();
@@ -672,7 +691,7 @@ function sbosCreateSerpReviewPackage() {
   }
 
   const requestId = 'SBOS-SERP-' + Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
-  const inputFile = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B4').getDisplayValue();
+  const inputFile = sbosGetState_('input_file_name') || '未選択';
   const payload = {
     format: 'SIMS_BOS_SERP_REVIEW_REQUEST_V1',
     contract_version: '1.0',
@@ -708,7 +727,7 @@ function sbosCreateSerpReviewPackage() {
   const file = folder.createFile(zipBlob);
 
   for (let i = 0; i < values.length; i++) {
-    if (values[i][12] === 'PENDING') sh.getRange(i + 2, 13).setValue('REQUESTED');
+    if (sbosStatusCode_(values[i][12]) === 'PENDING') sh.getRange(i + 2, 13).setValue('REQUESTED');
   }
   sbosSetState_('serp_request_id', requestId);
   sbosSetState_('serp_package_file_id', file.getId());
@@ -960,7 +979,7 @@ function sbosCollapseCandidateIntentDuplicates_() {
 // ============================================================================
 /**
  * SERP evaluator adapter.
- * v0.3.0 deliberately does NOT scrape Google Search directly.
+ * v0.4.0 deliberately does NOT scrape Google Search directly.
  * A provider can be connected later through Settings / Script Properties.
  */
 function sbosEvaluateSerpCandidate_(candidate) {
@@ -968,7 +987,7 @@ function sbosEvaluateSerpCandidate_(candidate) {
   if (provider === 'NONE' || provider === 'CHATGPT_PACKAGE') {
     return {status:'PENDING', score:null, evidence:'ChatGPT SERP精査結果待ち'};
   }
-  throw new Error('SERP Provider「' + provider + '」はv0.3.0で未実装です。');
+  throw new Error('SERP Provider「' + provider + '」はv0.4.0で未実装です。');
 }
 
 // ============================================================================
@@ -1326,46 +1345,122 @@ function sbosEnsureSheets_() {
     if (!sh) sh = ss.insertSheet(name);
     if (hidden && !sh.isSheetHidden()) sh.hideSheet();
   });
-  sbosInitHome_();
+
+  sbosTidyDefaultSheets_();
   sbosInitSettings_();
   sbosInitKeywords_();
   sbosInitCandidates_();
+  sbosInitHome_();
   sbosRefreshHomeSummary_();
+
+  const home = ss.getSheetByName(SBOS_SHEETS.HOME);
+  if (home && ss.getSheets()[0].getSheetId() !== home.getSheetId()) {
+    ss.setActiveSheet(home);
+    ss.moveActiveSheet(1);
+  }
 }
 
 function sbosInitHome_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME);
-  if (!(sh.getLastRow() > 0 && sh.getRange('A1').getValue())) sh.clear();
+  let migratedInput = sbosGetState_('input_file_name') || '';
+  if (!migratedInput && sh.getLastRow() >= 4) {
+    const old = sh.getRange('B4').getDisplayValue();
+    if (old && old !== '未選択' && old !== '0') migratedInput = old;
+  }
+  if (migratedInput) sbosSetState_('input_file_name', migratedInput);
 
-  const labels = [
-    [SBOS_PRODUCT_NAME, ''],
-    ['Version', SBOS_VERSION],
-    ['対象ブログ', sbosGetSetting_('site_name') || '未設定'],
-    ['入力ファイル', sh.getRange('B4').getDisplayValue() || '未選択'],
-    ['総キーワード数', Number(sh.getRange('B5').getValue()) || 0],
-    ['3語候補', Number(sh.getRange('B6').getValue()) || 0],
-    ['既存4語候補', 0],
-    ['生成4語候補', 0],
-    ['SERP精査待ち', 0],
-    ['カニバリ精査待ち', 0],
-    ['GREEN', 0],
-    ['YELLOW', 0],
-    ['BLOCK', 0],
-    ['類似候補へ統合', 0],
-    ['Creator依頼可能', 0],
-    ['Creator依頼済み', 0],
-    ['処理状態', sh.getRange('B17').getDisplayValue() || '未実行']
-  ];
-  sh.getRange('A1:B17').setValues(labels);
-  sh.getRange('A1').setFontWeight('bold').setFontSize(16);
-  sh.getRange('A2:A17').setFontWeight('bold');
-  sh.setColumnWidth(1, 190);
-  sh.setColumnWidth(2, 320);
-  sh.getRange('A11:B11').setBackground('#d9ead3');
-  sh.getRange('A12:B12').setBackground('#fff2cc');
-  sh.getRange('A13:B13').setBackground('#e6e6e6');
-  sh.getRange('A14:B14').setBackground('#f1f3f4');
+  sh.getRange(1,1,sh.getMaxRows(),sh.getMaxColumns()).breakApart();
+  sh.clear();
+  sh.setHiddenGridlines(true);
+  sh.setFrozenRows(3);
+  sh.setTabColor('#1a73e8');
+
+  // Product header
+  sh.getRange('A1:H2').merge();
+  sh.getRange('A1').setValue(SBOS_PRODUCT_NAME)
+    .setFontSize(22).setFontWeight('bold').setFontColor('#ffffff')
+    .setBackground('#174ea6').setHorizontalAlignment('left').setVerticalAlignment('middle');
+
+  sh.getRange('A3:F3').merge();
+  sh.getRange('A3').setValue('3語・4語ロングテールから、個人ブログ向けのBlue Ocean候補を発見')
+    .setFontSize(10).setFontColor('#5f6368').setBackground('#f8fafd')
+    .setVerticalAlignment('middle');
+  sh.getRange('G3:H3').merge();
+  sh.getRange('G3').setValue('Version ' + SBOS_VERSION)
+    .setFontWeight('bold').setFontColor('#174ea6').setBackground('#f8fafd')
+    .setHorizontalAlignment('right');
+
+  // Site / runtime information
+  sh.getRange('A5:H5').merge().setValue('運用情報')
+    .setFontWeight('bold').setFontColor('#174ea6').setBackground('#e8f0fe');
+  sh.getRange('A6:B6').merge().setValue('対象ブログ').setFontWeight('bold');
+  sh.getRange('C6:H6').merge();
+  sh.getRange('A7:B7').merge().setValue('入力ファイル').setFontWeight('bold');
+  sh.getRange('C7:H7').merge();
+  sh.getRange('A8:B8').merge().setValue('現在の状態').setFontWeight('bold');
+  sh.getRange('C8:H8').merge().setFontWeight('bold').setFontColor('#174ea6');
+
+  // Candidate source cards
+  sh.getRange('A9:H9').merge().setValue('キーワード探索')
+    .setFontWeight('bold').setFontColor('#174ea6').setBackground('#e8f0fe');
+  sbosHomeCard_(sh,'A10:B10','A11:B12','総キーワード','#e8f0fe');
+  sbosHomeCard_(sh,'C10:D10','C11:D12','3語候補','#e8f0fe');
+  sbosHomeCard_(sh,'E10:F10','E11:F12','既存4語','#e8f0fe');
+  sbosHomeCard_(sh,'G10:H10','G11:H12','生成4語','#e8f0fe');
+
+  // Workflow cards
+  sh.getRange('A13:H13').merge().setValue('現在の候補状況')
+    .setFontWeight('bold').setFontColor('#174ea6').setBackground('#e8f0fe');
+  sbosHomeCard_(sh,'A14:B14','A15:B16','SERP精査待ち','#fff2cc');
+  sbosHomeCard_(sh,'C14:D14','C15:D16','カニバリ精査待ち','#fff2cc');
+  sbosHomeCard_(sh,'E14:F14','E15:F16','GREEN','#d9ead3');
+  sbosHomeCard_(sh,'G14:H14','G15:H16','Creator依頼可能','#d9ead3');
+
+  // Other status cards
+  sh.getRange('A18:H18').merge().setValue('判定・処理済み')
+    .setFontWeight('bold').setFontColor('#174ea6').setBackground('#e8f0fe');
+  sbosHomeCard_(sh,'A19:B19','A20:B21','YELLOW','#fff2cc');
+  sbosHomeCard_(sh,'C19:D19','C20:D21','BLOCK','#e6e6e6');
+  sbosHomeCard_(sh,'E19:F19','E20:F21','類似候補へ統合','#f1f3f4');
+  sbosHomeCard_(sh,'G19:H19','G20:H21','Creator依頼済み','#f1f3f4');
+
+  // Workflow guide
+  sh.getRange('A23:H23').merge().setValue('標準フロー')
+    .setFontWeight('bold').setFontColor('#174ea6').setBackground('#e8f0fe');
+  sh.getRange('A24:H27').setValues([
+    ['1','キーワード読込','→','2','候補探索・4語深掘り','→','3','SERP精査'],
+    ['4','SERP結果登録','→','5','カニバリ精査','→','6','カニバリ結果登録'],
+    ['7','GREEN候補確認','→','8','Creator依頼文作成','','',''],
+    ['','','','','','','','']
+  ]);
+  sh.getRange('A24:H26').setVerticalAlignment('middle');
+  sh.getRange('A24:A26').setFontWeight('bold').setFontColor('#174ea6');
+  sh.getRange('D24:D26').setFontWeight('bold').setFontColor('#174ea6');
+  sh.getRange('G24:G26').setFontWeight('bold').setFontColor('#174ea6');
+
+  sh.getRange('A29:H30').merge().setValue(
+    'GREENはSERP精査とカニバリ精査を通過した新規記事候補です。新規記事はSIMS Article Creatorへ渡します。'
+  ).setWrap(true).setFontSize(9).setFontColor('#5f6368').setBackground('#f8fafd');
+
+  // Layout sizing
+  [1,2,3,4,5,6,7,8].forEach(c => sh.setColumnWidth(c, 120));
+  sh.setRowHeights(1,2,30);
+  sh.setRowHeight(3,24);
+  [11,12,15,16,20,21].forEach(r => sh.setRowHeight(r,28));
+  sh.getRange('A1:H30').setFontFamily('Arial').setVerticalAlignment('middle');
+  sh.getRange('A5:H30').setBorder(false,false,false,false,false,false);
+
   sbosRefreshHomeSummary_();
+}
+
+function sbosHomeCard_(sh, labelRange, valueRange, label, bg) {
+  sh.getRange(labelRange).merge().setValue(label)
+    .setFontWeight('bold').setFontSize(9).setHorizontalAlignment('center')
+    .setBackground(bg).setFontColor('#3c4043');
+  sh.getRange(valueRange).merge().setValue(0)
+    .setFontWeight('bold').setFontSize(18).setHorizontalAlignment('center')
+    .setBackground('#ffffff').setFontColor('#202124')
+    .setBorder(true,true,true,true,false,false,'#dadce0',SpreadsheetApp.BorderStyle.SOLID);
 }
 
 
