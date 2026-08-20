@@ -26,7 +26,11 @@ function choose(id,name){
       document.getElementById('msg').textContent='Package作成完了';
       alert('カニバリ精査Packageを作成しました\n候補: '+meta.count+'件\n'+meta.fileName);
       google.script.host.close();
-    }).withFailureHandler(err=>{document.getElementById('msg').textContent='エラー';alert(err.message||err)}).sbosCreateCannibalReviewPackageFromEvidence(id);
+    }).withFailureHandler(err=>{
+      const detail=(err&&err.message)?err.message:String(err||'不明なエラー');
+      document.getElementById('msg').textContent='エラー: '+detail;
+      alert(detail);
+    }).sbosCreateCannibalReviewPackageFromEvidence(id);
     return;
   }
   google.script.run.withSuccessHandler(meta=>{

@@ -16,7 +16,7 @@
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.8';
+const SBOS_VERSION = '0.1.9';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -855,61 +855,89 @@ function sbosCannibalRisk_(keyword) {
 // Cannibal Review Package
 // ============================================================================
 function sbosCreateCannibalReviewPackageFromEvidence(fileId) {
-  sbosEnsureSheets_();
-  const ui = SpreadsheetApp.getUi();
-  const evidenceFile = DriveApp.getFileById(fileId);
-  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
-  const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
-  const candidates = vals.filter(r => r[12] === 'GREEN' && r[1] === 'CANNIBAL_PENDING').map(r => ({
-    rank:Number(r[0])||0, main_keyword:r[2], words:Number(r[3])||0,
-    blue_ocean_score:Number(r[5])||0, search_intent:r[7],
-    evidence_summary:r[8], intent_key:r[11]
-  }));
-  if (!candidates.length) throw new Error('SERP GREENかつCANNIBAL_PENDINGの候補がありません。');
+  let stage = '開始';
+  try {
+    sbosEnsureSheets_();
+    stage = 'Evidenceファイル取得';
+    const evidenceFile = DriveApp.getFileById(fileId);
+    const evidenceName = evidenceFile.getName();
+    if (!/\.(zip|csv|tsv|json)$/i.test(evidenceName)) {
+      throw new Error('対応していないEvidence形式です: ' + evidenceName);
+    }
 
-  const siteName = sbosGetSetting_('site_name') || 'Unknown-Site';
-  const siteUrl = sbosGetSetting_('site_url') || '';
-  const folderId = sbosGetSetting_('output_folder_id');
-  const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
-  const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
-  const requestId = 'SBOS-CANNIBAL-' + ts;
-  const payload = {
-    format:'SIMS_BOS_CANNIBAL_REVIEW_REQUEST_V1', contract_version:'1.0',
-    request_id:requestId, created_at:new Date().toISOString(),
-    site:{name:siteName,url:siteUrl}, candidate_count:candidates.length,
-    evidence_file:{name:evidenceFile.getName()}, candidates:candidates
-  };
-  const md = [
-    '# SIMS Blue Ocean Screener カニバリ精査依頼','',
-    '## 目的','',
-    'SERP GREEN候補が対象ブログの既存記事と検索意図を食い合わず、新規記事として独立できるか判定してください。','',
-    '## 判定','',
-    '- GREEN: 既存記事との役割が明確に分離でき、新規記事として独立可能',
-    '- YELLOW: 一部重複。記事境界・内部リンク・担当範囲の設計が必要',
-    '- BLOCK: 既存記事と同一または近接Intentで、新規記事化するとカニバリの可能性が高い','',
-    '## 必須確認','',
-    '- 既存記事タイトルだけでなく、メインクエリ・本文の担当範囲・検索意図を比較する',
-    '- 単語が重なるだけではBLOCKにしない',
-    '- GREENの場合はCreatorへ渡す「新記事が担当する範囲」「既存記事へ任せる範囲」「内部リンク候補」を返す','',
-    '## 返却JSON','',
-    '`SIMS_BOS_CANNIBAL_REVIEW_RESULT_V1`','',
-    'results[]: main_keyword, decision(GREEN/YELLOW/BLOCK), cannibalization(LOW/MEDIUM/HIGH), matched_articles[], article_scope, existing_article_boundary, internal_link_candidates[], evidence_summary'
-  ].join('\n');
-  const blobs = [
-    Utilities.newBlob(md,'text/markdown','CANNIBAL-REVIEW-REQUEST.md'),
-    Utilities.newBlob(JSON.stringify(payload,null,2),'application/json','CANNIBAL_REVIEW_REQUEST_V1.json'),
-    evidenceFile.getBlob().setName(evidenceFile.getName())
-  ];
-  const safeSite = sbosSafeFilePart_(siteName);
-  const zipName = 'SIMS-Blue-Ocean-Screener-' + safeSite + '-ChatGPT-Cannibal-Review-' + ts + '.zip';
-  const out = folder.createFile(Utilities.zip(blobs,zipName));
-  sbosSetState_('cannibal_request_id', requestId);
-  sbosSetState_('cannibal_package_file_id', out.getId());
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('カニバリ精査Package作成済み');
-  ui.alert('カニバリ精査Packageを作成しました',
-    '候補: '+candidates.length+'件\nEvidence: '+evidenceFile.getName()+'\nファイル名: '+zipName+
-    '\n\nこのZIPをChatGPTへそのままアップロードしてください。', ui.ButtonSet.OK);
-  return {count:candidates.length,fileName:zipName};
+    stage = 'GREEN候補抽出';
+    const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+    if (!sh || sh.getLastRow() < 2) throw new Error('Candidatesシートに候補がありません。');
+    const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getDisplayValues();
+    const candidates = vals.filter(r => r[12] === 'GREEN' && r[1] === 'CANNIBAL_PENDING').map(r => ({
+      rank:Number(r[0])||0, main_keyword:r[2], words:Number(r[3])||0,
+      blue_ocean_score:Number(r[5])||0, search_intent:r[7],
+      evidence_summary:r[8], intent_key:r[11]
+    }));
+    if (!candidates.length) throw new Error('SERP GREENかつCANNIBAL_PENDINGの候補がありません。');
+
+    stage = '保存先確認';
+    const siteName = sbosGetSetting_('site_name') || 'Unknown-Site';
+    const siteUrl = sbosGetSetting_('site_url') || '';
+    const folderId = sbosGetSetting_('output_folder_id');
+    const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+
+    stage = '依頼データ作成';
+    const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
+    const requestId = 'SBOS-CANNIBAL-' + ts;
+    const payload = {
+      format:'SIMS_BOS_CANNIBAL_REVIEW_REQUEST_V1', contract_version:'1.0',
+      request_id:requestId, created_at:new Date().toISOString(),
+      site:{name:siteName,url:siteUrl}, candidate_count:candidates.length,
+      evidence_file:{name:evidenceName}, candidates:candidates
+    };
+    const md = [
+      '# SIMS Blue Ocean Screener カニバリ精査依頼','',
+      '## 目的','',
+      'SERP GREEN候補が対象ブログの既存記事と検索意図を食い合わず、新規記事として独立できるか判定してください。','',
+      '## 判定','',
+      '- GREEN: 既存記事との役割が明確に分離でき、新規記事として独立可能',
+      '- YELLOW: 一部重複。記事境界・内部リンク・担当範囲の設計が必要',
+      '- BLOCK: 既存記事と同一または近接Intentで、新規記事化するとカニバリの可能性が高い','',
+      '## 必須確認','',
+      '- 既存記事タイトルだけでなく、メインクエリ・本文の担当範囲・検索意図を比較する',
+      '- 単語が重なるだけではBLOCKにしない',
+      '- GREENの場合はCreatorへ渡す「新記事が担当する範囲」「既存記事へ任せる範囲」「内部リンク候補」を返す','',
+      '## 返却JSON','',
+      '`SIMS_BOS_CANNIBAL_REVIEW_RESULT_V1`','',
+      'results[]: main_keyword, decision(GREEN/YELLOW/BLOCK), cannibalization(LOW/MEDIUM/HIGH), matched_articles[], article_scope, existing_article_boundary, internal_link_candidates[], evidence_summary'
+    ].join('\n');
+
+    stage = 'Evidence読込';
+    const evidenceBlob = evidenceFile.getBlob();
+    evidenceBlob.setName(evidenceName);
+
+    stage = 'ZIP生成';
+    const blobs = [
+      Utilities.newBlob(md,'text/plain','CANNIBAL-REVIEW-REQUEST.md'),
+      Utilities.newBlob(JSON.stringify(payload,null,2),'application/json','CANNIBAL_REVIEW_REQUEST_V1.json'),
+      evidenceBlob
+    ];
+    const safeSite = sbosSafeFilePart_(siteName);
+    const zipName = 'SIMS-Blue-Ocean-Screener-' + safeSite + '-ChatGPT-Cannibal-Review-' + ts + '.zip';
+    const zipBlob = Utilities.zip(blobs, zipName);
+
+    stage = 'Google Drive保存';
+    const out = folder.createFile(zipBlob);
+
+    stage = '状態保存';
+    sbosSetState_('cannibal_request_id', requestId);
+    sbosSetState_('cannibal_package_file_id', out.getId());
+    SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('カニバリ精査Package作成済み');
+
+    // HTMLダイアログから呼ばれるため、ここではSpreadsheet UI alertを開かない。
+    return {
+      ok:true, count:candidates.length, fileName:zipName,
+      evidenceName:evidenceName, folderName:folder.getName(), requestId:requestId
+    };
+  } catch (e) {
+    throw new Error('カニバリ精査Package作成に失敗しました。\n処理段階: ' + stage + '\n詳細: ' + (e && e.message ? e.message : e));
+  }
 }
 
 // ============================================================================

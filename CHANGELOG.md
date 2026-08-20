@@ -1,8 +1,5 @@
 # Changelog
-
-## v0.1.8
-- Added cannibalization review package generation for SERP GREEN candidates.
-- Changed new-article handoff from Writer to SIMS Article Creator.
-- Renamed Writer Status to Creator Status.
-- Changed clustered candidates' overall Status to CLUSTERED.
-- Added Drive picker mode for SIMS Evidence used by cannibalization review.
+## v0.1.9
+- Fixed cannibal review package generation from DrivePicker.
+- Removed nested Spreadsheet UI alert from HTML-invoked server flow.
+- Added stage-aware error diagnostics.
