@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.5.0
+ * SIMS Blue Ocean Screener v0.5.1
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.5.0
+ * SIMS Blue Ocean Screener v0.5.1
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.5.0';
+const SBOS_VERSION = '0.5.1';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -618,13 +618,10 @@ function sbosRunScreening_() {
   sbosSetState_('generated_4word_count', generated.length);
   sbosSetHomeStatus_('SERP精査待ち');
 
-  SpreadsheetApp.getUi().alert(
-    '一次選抜・4語深掘り完了',
-    'SERP精査対象: ' + limited.length + '件\n' +
-    '新規4語深掘り候補: ' + generated.length + '件\n\n' +
-    'GENERATED_4WORDは需要未確認です。SERP精査で実在需要と競合を確認するまでGREENにはしません。\n\n次に「3. SERP精査依頼Packageを作成する」を実行してください。',
-    SpreadsheetApp.getUi().ButtonSet.OK
-  );
+  return {
+    serpCount: limited.length,
+    generated4: generated.length
+  };
 }
 
 
@@ -786,14 +783,21 @@ function sbosCreateSerpReviewPackage() {
   sbosSetState_('serp_package_file_name', zipName);
   sbosSetHomeStatus_('SERP精査依頼Package作成済み');
 
-  ui.alert(
+  sbosShowWorkflowResult_(
     'SERP精査依頼Packageを作成しました',
-    '候補: ' + candidates.length + '件\n' +
-    'ファイル名: ' + zipName + '\n' +
-    '保存先: ' + (folderName || folder.getName() || 'マイドライブ') + '\n\n' +
-    '次に、このZIPをChatGPTへそのままアップロードしてSERP精査を依頼し、返却JSONをGoogle Driveへ保存した後「4. SERP精査結果を登録する」を実行してください。',
-    ui.ButtonSet.OK
+    '<b>候補:</b> ' + candidates.length + '件<br>' +
+    '<b>ファイル名:</b> ' + sbosEscapeHtml_(zipName) + '<br>' +
+    '<b>保存先:</b> ' + sbosEscapeHtml_(folderName || folder.getName() || 'マイドライブ') + '<br><br>' +
+    '次に、このZIPをChatGPTへそのままアップロードしてSERP精査を依頼してください。返却JSONをGoogle Driveへ保存した後、「4. SERP精査結果を登録する」へ進みます。',
+    '',
+    ''
   );
+  return {
+    count:candidates.length,
+    fileName:zipName,
+    folderName:(folderName || folder.getName() || 'マイドライブ'),
+    requestId:requestId
+  };
 }
 
 function sbosBuildSerpPackageReadme_(p) {
@@ -1344,6 +1348,10 @@ function sbosBuildCreatorReferral_(v) {
 }
 
 
+/**
+ * SIMS共通の完了・状態ダイアログ。
+ * 「結果概要 → 次工程の青ボタン → 閉じる」を全工程で統一する。
+ */
 function sbosShowWorkflowResult_(title, bodyHtml, primaryLabel, primaryFunction) {
   const safeTitle = sbosEscapeHtml_(title || '処理完了');
   const fn = String(primaryFunction || '').replace(/[^A-Za-z0-9_]/g, '');
@@ -1418,10 +1426,24 @@ function sbosRegisterSbmArticleResult() {
 function sbosResumeBatch() {
   const status = sbosGetState_('status') || '未実行';
   if (status === SBOS_STATUS.IMPORT_DONE || status === SBOS_STATUS.SCREENING_RUNNING) {
-    sbosRunScreening_();
+    const meta = sbosStartScreeningFromDialog();
+    sbosShowWorkflowResult_(
+      '一次選抜・4語深掘り完了',
+      '<b>SERP精査対象:</b> ' + meta.serpCount + '件<br>' +
+      '<b>新規4語深掘り候補:</b> ' + meta.generated4 + '件<br><br>' +
+      'GENERATED_4WORDは需要未確認です。SERP精査で実在需要と競合を確認するまでGREENにはしません。',
+      '3. SERP精査Packageを作成',
+      'sbosCreateSerpReviewPackage'
+    );
     return;
   }
-  SpreadsheetApp.getUi().alert('現在の処理状態: ' + status + '\n\nSERP精査結果を登録した後、SERP GREEN候補はカニバリ検査待ちになります。');
+  sbosShowWorkflowResult_(
+    '処理状態',
+    '<b>現在の状態:</b> ' + sbosEscapeHtml_(status) + '<br><br>' +
+    'SERP精査結果を登録した後、SERP GREEN候補はカニバリ検査待ちになります。',
+    '',
+    ''
+  );
 }
 
 function sbosSetState_(key, value) {
@@ -1442,7 +1464,12 @@ function sbosGetState_(key) {
 
 function sbosShowStatus() {
   const s = sbosGetState_('status') || '未実行';
-  SpreadsheetApp.getUi().alert('処理状態', s, SpreadsheetApp.getUi().ButtonSet.OK);
+  sbosShowWorkflowResult_(
+    '処理状態',
+    '<b>現在の状態:</b> ' + sbosEscapeHtml_(s),
+    '',
+    ''
+  );
 }
 
 // ============================================================================
