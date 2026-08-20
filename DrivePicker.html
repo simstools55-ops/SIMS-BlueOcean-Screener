@@ -1,0 +1,15 @@
+<!doctype html>
+<html><head><base target="_top"><style>
+body{font-family:Arial,sans-serif;margin:0;color:#202124} .bar{padding:10px 14px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center}
+#path{flex:1;font-size:13px;color:#5f6368}.list{height:380px;overflow:auto}.row{padding:10px 14px;border-bottom:1px solid #eee;cursor:pointer;display:flex;gap:10px}.row:hover{background:#f6f8fa}.name{flex:1}.type{width:70px;color:#777;font-size:12px}.footer{padding:10px 14px;border-top:1px solid #ddd;text-align:right}button{padding:7px 14px}
+</style></head><body>
+<div class="bar"><button onclick="goRoot()">ルート</button><button id="upBtn" onclick="goUp()" disabled>一つ上へ</button><span id="path">マイドライブ</span></div>
+<div id="list" class="list"></div>
+<div class="footer"><span id="msg"></span> <button onclick="google.script.host.close()">閉じる</button></div>
+<script>
+let folderId=''; let parentId='';
+function load(id){folderId=id||'';document.getElementById('msg').textContent='読み込み中…';google.script.run.withSuccessHandler(render).withFailureHandler(err).sbosListDriveFiles(folderId)}
+function render(payload){folderId=payload.folderId||'';parentId=payload.parentId||'';document.getElementById('path').textContent=payload.folderName||'マイドライブ';document.getElementById('upBtn').disabled=!folderId;const items=payload.items||[];const el=document.getElementById('list');el.innerHTML='';items.forEach(x=>{const d=document.createElement('div');d.className='row';d.innerHTML='<span class="type">'+(x.type==='folder'?'フォルダー':'ファイル')+'</span><span class="name"></span>';d.querySelector('.name').textContent=x.name;d.onclick=()=>x.type==='folder'?load(x.id):choose(x.id,x.name);el.appendChild(d)});document.getElementById('msg').textContent=items.length+'件'}
+function choose(id,name){document.getElementById('msg').textContent='「'+name+'」を読み込み中…';google.script.run.withSuccessHandler(meta=>{alert('読み込み完了\n総件数: '+meta.total+'\n3語: '+meta.three+'\n4語: '+meta.four);google.script.host.close()}).withFailureHandler(err=>alert(err.message||err)).sbosImportDriveFile(id)}
+function goRoot(){load('')} function goUp(){load(parentId||'')} function err(e){document.getElementById('msg').textContent=e.message||e} load('');
+</script></body></html>
