@@ -1,6 +1,9 @@
 # Changelog
 
-## v0.1.12
-- Fixed Creator referral wording to prevent keyword word-count from being mistaken for article length.
-- Renamed existing-article handoff section to `既存記事との検索意図の境界`.
-- No workflow or scoring logic changes.
+## v0.2.0
+- Connected 3-word to 4-word long-tail deepening into the production screening flow.
+- Added contextual 4-word expansion rules.
+- Added `GENERATED_4WORD` source classification and demand-verification requirement.
+- Limited generated candidates to two per base keyword and twenty total.
+- Removed XLSX from selectable inputs until direct XLSX parsing is implemented.
+- Normalized all product version strings to v0.2.0.

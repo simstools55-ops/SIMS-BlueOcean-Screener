@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.1.8
+ * SIMS Blue Ocean Screener v0.2.0
  * Complete Single-Code distribution.
  * First runtime-test baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.1.8
+ * SIMS Blue Ocean Screener v0.2.0
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.1.12';
+const SBOS_VERSION = '0.2.0';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -60,7 +60,11 @@ const SBOS_THRESHOLDS = {
   SERP_QUEUE_MIN: 45,
   GREEN_SCORE: 80,
   YELLOW_SCORE: 65,
-  MAX_SERP_QUEUE: 80
+  MAX_SERP_QUEUE: 80,
+  FOUR_WORD_BASE_MIN: 50,
+  FOUR_WORD_BASE_MAX: 79,
+  MAX_GENERATED_4WORD: 20,
+  MAX_GENERATED_PER_BASE: 2
 };
 
 const SBOS_TROUBLE_TERMS = [
@@ -208,7 +212,7 @@ function sbosListDriveFiles(folderId, pickerMode) {
     const isCannibalEvidence = pickerMode === 'cannibal_evidence';
     const isCannibalResult = pickerMode === 'cannibal_result';
     const ok = (isSerpResult || isCannibalResult) ? /\.json$/i.test(name)
-      : (isCannibalEvidence ? /\.(zip|csv|tsv|json)$/i.test(name) : /\.(csv|tsv|xlsx)$/i.test(name));
+      : (isCannibalEvidence ? /\.(zip|csv|tsv|json)$/i.test(name) : /\.(csv|tsv)$/i.test(name));
     if (ok) result.push({type:'file', id:f.getId(), name:name, mime:f.getMimeType()});
   }
   result.sort((a,b) => a.type === b.type ? a.name.localeCompare(b.name, 'ja') : (a.type === 'folder' ? -1 : 1));
@@ -229,10 +233,10 @@ function sbosListDriveFiles(folderId, pickerMode) {
 function sbosImportDriveFile(fileId) {
   const file = DriveApp.getFileById(fileId);
   const name = file.getName();
-  if (/\.xlsx$/i.test(name)) {
-    throw new Error('v0.1.8ではXLSXの直接読込は未実装です。CSV/TSVで保存して選択してください。');
+  if (!/\.(csv|tsv)$/i.test(name)) {
+    throw new Error('入力ファイルはCSVまたはTSVを選択してください。');
   }
-  const blob = file.getBlob();
+    const blob = file.getBlob();
   const bytes = blob.getBytes();
   let text;
   if (bytes.length >= 2 && (bytes[0] & 255) === 255 && (bytes[1] & 255) === 254) {
@@ -407,26 +411,77 @@ function sbosRunScreening_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.KEYWORDS);
   const rows = sh.getRange(2,1,sh.getLastRow()-1,13).getValues();
   const out = [];
+  const existingKeys = new Set();
+
+  // まず入力ファイルに実在する3語・4語候補を収集する。
   rows.forEach(r => {
     const words = Number(r[5]);
     if ((words !== 3 && words !== 4) || r[12] !== 'YES') return;
-    const kw = String(r[3]);
+    const kw = String(r[3] || '').trim();
+    if (!kw) return;
+    const matchKey = sbosKeywordMatchKey_(kw);
+    if (matchKey) existingKeys.add(matchKey);
     const score = sbosPreScore_(kw, words, r[7]);
     if (score < SBOS_THRESHOLDS.SERP_QUEUE_MIN) return;
     const source = words === 4 ? 'EXISTING_4WORD' : 'EXISTING_3WORD';
-    out.push({kw, words, score, source, intent:r[11]});
+    out.push({
+      kw:kw, words:words, score:score, source:source,
+      intent:sbosIntentKey_(sbosNormalizeKeyword_(kw)),
+      baseKeyword:'', generatedReason:''
+    });
   });
-  out.sort((a,b) => b.score - a.score);
-  const limited = out.slice(0, SBOS_THRESHOLDS.MAX_SERP_QUEUE);
+
+  // 3語で需要・意図はありそうだが競合余地をもう一段掘りたい候補だけ4語化する。
+  const bases = out
+    .filter(x => x.words === 3 &&
+      x.score >= SBOS_THRESHOLDS.FOUR_WORD_BASE_MIN &&
+      x.score <= SBOS_THRESHOLDS.FOUR_WORD_BASE_MAX)
+    .sort((a,b) => b.score - a.score);
+
+  const generated = [];
+  const generatedKeys = new Set();
+  bases.forEach(base => {
+    if (generated.length >= SBOS_THRESHOLDS.MAX_GENERATED_4WORD) return;
+    const ideas = sbosGenerateFourWordIdeas_(base.kw)
+      .slice(0, SBOS_THRESHOLDS.MAX_GENERATED_PER_BASE);
+    ideas.forEach(idea => {
+      if (generated.length >= SBOS_THRESHOLDS.MAX_GENERATED_4WORD) return;
+      const kw = String(idea.keyword || '').trim();
+      const key = sbosKeywordMatchKey_(kw);
+      if (!kw || !key || existingKeys.has(key) || generatedKeys.has(key)) return;
+      if (sbosDetectWordCount_(kw) !== 4) return;
+
+      generatedKeys.add(key);
+      // AI/ルール生成語なので「実在需要未確認」のペナルティを与える。
+      const rawScore = sbosPreScore_(kw, 4, '');
+      const score = Math.max(SBOS_THRESHOLDS.SERP_QUEUE_MIN, Math.min(79, rawScore - 10));
+      generated.push({
+        kw:kw, words:4, score:score, source:'GENERATED_4WORD',
+        intent:sbosIntentKey_(sbosNormalizeKeyword_(kw)),
+        baseKeyword:base.kw,
+        generatedReason:idea.reason || '3語候補の検索意図を具体化'
+      });
+    });
+  });
+
+  const combined = out.concat(generated);
+  combined.sort((a,b) => b.score - a.score || (a.source === 'GENERATED_4WORD' ? 1 : -1));
+  const limited = combined.slice(0, SBOS_THRESHOLDS.MAX_SERP_QUEUE);
+
   sbosWriteCandidates_(limited);
   sbosSetState_('status', SBOS_STATUS.SERP_RUNNING);
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('SERP検査待ち');
+  sbosSetState_('generated_4word_count', generated.length);
+  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('B8').setValue('SERP精査待ち');
+
   SpreadsheetApp.getUi().alert(
-    '一次選抜完了',
-    'SERP精査対象として ' + limited.length + ' 件に絞り込みました。\n\nSERP Provider未設定のため、現段階ではGREENを確定せず「PENDING」とします。',
+    '一次選抜・4語深掘り完了',
+    'SERP精査対象: ' + limited.length + '件\n' +
+    '新規4語深掘り候補: ' + generated.length + '件\n\n' +
+    'GENERATED_4WORDは需要未確認です。SERP精査で実在需要と競合を確認するまでGREENにはしません。',
     SpreadsheetApp.getUi().ButtonSet.OK
   );
 }
+
 
 function sbosPreScore_(kw, words, volume) {
   let score = 20;
@@ -444,10 +499,15 @@ function sbosPreScore_(kw, words, volume) {
 function sbosWriteCandidates_(items) {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
   if (sh.getLastRow() > 1) sh.getRange(2,1,sh.getLastRow()-1,13).clearContent();
-  const vals = items.map((x,i) => [
-    i+1,'PENDING',x.kw,x.words,x.score,'PENDING','PENDING',sbosDescribeIntent_(x.kw),
-    '一次選抜通過。Pre Scoreです。実SERP確認前のためBlue Ocean Scoreは未確定です。',x.source,'未作成',x.intent,'PENDING'
-  ]);
+  const vals = items.map((x,i) => {
+    const evidence = x.source === 'GENERATED_4WORD'
+      ? '3語候補「' + x.baseKeyword + '」から4語へ深掘り生成。理由: ' + x.generatedReason + '。需要Signalは未確認のため、実SERP・サジェスト等で確認するまでBlue Ocean確定不可。'
+      : '入力ファイルに実在する候補。一次選抜通過。Pre Scoreです。実SERP確認前のためBlue Ocean Scoreは未確定です。';
+    return [
+      i+1,'PENDING',x.kw,x.words,x.score,'PENDING','PENDING',sbosDescribeIntent_(x.kw),
+      evidence,x.source,'未作成',x.intent,'PENDING'
+    ];
+  });
   if (vals.length) sh.getRange(2,1,vals.length,13).setValues(vals);
   sbosApplyCandidateFormatting_();
 }
@@ -626,6 +686,7 @@ function sbosBuildSerpReviewRequestMarkdown_(p) {
     '- 古い情報や検索意図ズレが残っているか',
     '- 対象ブログとのテーマ適合性',
     '- 3語が強い場合、自然な4語深掘り候補があるか',
+    '- source=GENERATED_4WORD はシステム生成候補。サジェスト、実検索結果、Q&A等で需要Signalを確認できない限りGREENにしない',
     '',
     '## 判定',
     '',
@@ -817,7 +878,7 @@ function sbosCollapseCandidateIntentDuplicates_() {
 // ============================================================================
 /**
  * SERP evaluator adapter.
- * v0.1.6 deliberately does NOT scrape Google Search directly.
+ * v0.2.0 deliberately does NOT scrape Google Search directly.
  * A provider can be connected later through Settings / Script Properties.
  */
 function sbosEvaluateSerpCandidate_(candidate) {
@@ -825,7 +886,7 @@ function sbosEvaluateSerpCandidate_(candidate) {
   if (provider === 'NONE' || provider === 'CHATGPT_PACKAGE') {
     return {status:'PENDING', score:null, evidence:'ChatGPT SERP精査結果待ち'};
   }
-  throw new Error('SERP Provider「' + provider + '」はv0.1.8で未実装です。');
+  throw new Error('SERP Provider「' + provider + '」はv0.2.0で未実装です。');
 }
 
 // ============================================================================
@@ -834,8 +895,54 @@ function sbosEvaluateSerpCandidate_(candidate) {
 // ============================================================================
 function sbosGenerateFourWordIdeas_(keyword) {
   const base = String(keyword || '').trim();
-  const modifiers = ['原因','対処','復帰後','設定','できない'];
-  return modifiers.map(m => base + ' ' + m);
+  if (!base || sbosDetectWordCount_(base) !== 3) return [];
+  const s = base.toLowerCase();
+  const ideas = [];
+
+  function add(modifier, reason) {
+    const kw = base + ' ' + modifier;
+    if (sbosDetectWordCount_(kw) === 4) ideas.push({keyword:kw, reason:reason});
+  }
+
+  // 症状・利用場面に合わせた第4語。単なる「原因」「対処」の乱造を避ける。
+  if (/wifi/.test(s) && /(繋がらない|つながらない|接続できない)/.test(s)) {
+    add('データ移行後', 'Wi-Fi不通が起きる場面を具体化');
+    add('ios更新後', 'OS更新後という発生条件を具体化');
+  } else if (/ゲーム/.test(s) && /(音が出ない|無音)/.test(s)) {
+    add('特定アプリ', 'ゲームだけ無音になる対象を具体化');
+    add('bluetooth', '音声出力先の条件を具体化');
+  } else if (/ゲーム/.test(s) && /(重い|遅い|カクつく)/.test(s)) {
+    add('発熱', '処理低下と関連しやすい状況を具体化');
+    add('fps', 'ゲーム性能低下の現象を具体化');
+  } else if (/モバイルバッテリー/.test(s) && /(使えない|充電できない)/.test(s)) {
+    add('usb-c', '接続方式を具体化');
+    add('充電開始しない', '症状を具体化');
+  } else if (/(0|0%|0％|0パーセント)/.test(s) && /充電できない/.test(s)) {
+    add('usb-c', '完全放電後の有線充電条件を具体化');
+    add('完全放電', '0%状態の検索意図を明確化');
+  } else if (/近くのデバイス/.test(s) && /進まない/.test(s)) {
+    add('クイックスタート', '発生機能を具体化');
+    add('データ移行', '発生場面を具体化');
+  } else if (/\bx\b/.test(s) && /読み込めない/.test(s)) {
+    add('タイムライン', 'Xで読み込めない対象を具体化');
+    add('画像', 'Xで読み込めない対象を具体化');
+  } else if (/(人気ない|人気がない|不人気)/.test(s)) {
+    add('理由', '購入判断の疑問を具体化');
+    add('後悔', '購入後の不安・比較意図を具体化');
+  } else if (/nfc/.test(s) && /(反応しない|使えない)/.test(s)) {
+    add('マイナンバー', 'NFC利用場面を具体化');
+    add('タッチ決済', 'NFC利用場面を具体化');
+  } else {
+    // 汎用フォールバックは具体性の高い語だけに限定。
+    if (/(できない|しない|進まない|繋がらない|つながらない|重い|遅い|切れる)/.test(s)) {
+      add('特定条件', '症状の発生条件を追加して検索意図を細分化');
+    }
+    if (/(設定|どこ|方法|やり方)/.test(s)) {
+      add('見つからない', '設定・場所の困りごとを具体化');
+    }
+  }
+
+  return ideas.slice(0, SBOS_THRESHOLDS.MAX_GENERATED_PER_BASE);
 }
 
 // ============================================================================
