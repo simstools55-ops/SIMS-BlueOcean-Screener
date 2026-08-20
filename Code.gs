@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.4.0
+ * SIMS Blue Ocean Screener v0.5.0
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.4.0
+ * SIMS Blue Ocean Screener v0.5.0
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.4.0';
+const SBOS_VERSION = '0.5.0';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -184,6 +184,7 @@ function sbosBuildMenu_() {
     .addItem('6. カニバリ精査結果を登録する', 'sbosShowCannibalResultPicker')
     .addItem('7. 候補を確認する', 'sbosOpenCandidates')
     .addItem('8. Creator依頼文を作成する', 'sbosCreateCreatorReferral')
+    .addItem('9. SBM登録結果を記録する', 'sbosRegisterSbmArticleResult')
     .addSeparator()
     .addSubMenu(
       ui.createMenu('追加の操作')
@@ -239,7 +240,8 @@ function sbosShowDrivePicker() {
   sbosEnsureSheets_();
   const template = HtmlService.createTemplateFromFile('DrivePicker');
   template.pickerMode = 'file';
-  const html = template.evaluate().setWidth(760).setHeight(520);
+  template.startFolderId = sbosGetSetting_('input_folder_id') || sbosGetSetting_('output_folder_id') || '';
+  const html = template.evaluate().setWidth(800).setHeight(590);
   SpreadsheetApp.getUi().showModalDialog(html, '1. キーワードファイルを読み込む');
 }
 
@@ -247,7 +249,8 @@ function sbosShowDriveFolderPicker_() {
   sbosEnsureSheets_();
   const template = HtmlService.createTemplateFromFile('DrivePicker');
   template.pickerMode = 'folder';
-  const html = template.evaluate().setWidth(760).setHeight(520);
+  template.startFolderId = sbosGetSetting_('output_folder_id') || '';
+  const html = template.evaluate().setWidth(800).setHeight(590);
   SpreadsheetApp.getUi().showModalDialog(html, '保存先フォルダーを選ぶ');
 }
 
@@ -255,7 +258,8 @@ function sbosShowSerpResultPicker() {
   sbosEnsureSheets_();
   const template = HtmlService.createTemplateFromFile('DrivePicker');
   template.pickerMode = 'serp_result';
-  const html = template.evaluate().setWidth(760).setHeight(520);
+  template.startFolderId = sbosGetSetting_('output_folder_id') || '';
+  const html = template.evaluate().setWidth(800).setHeight(590);
   SpreadsheetApp.getUi().showModalDialog(html, '4. SERP精査結果を登録する');
 }
 
@@ -272,7 +276,8 @@ function sbosShowCannibalEvidencePicker() {
   }
   const template = HtmlService.createTemplateFromFile('DrivePicker');
   template.pickerMode = 'cannibal_evidence';
-  const html = template.evaluate().setWidth(760).setHeight(520);
+  template.startFolderId = sbosGetSetting_('output_folder_id') || '';
+  const html = template.evaluate().setWidth(800).setHeight(590);
   SpreadsheetApp.getUi().showModalDialog(html, '5. カニバリ精査用Evidenceを選ぶ');
 }
 
@@ -281,14 +286,36 @@ function sbosShowCannibalResultPicker() {
   sbosEnsureSheets_();
   const template = HtmlService.createTemplateFromFile('DrivePicker');
   template.pickerMode = 'cannibal_result';
-  const html = template.evaluate().setWidth(760).setHeight(520);
+  template.startFolderId = sbosGetSetting_('output_folder_id') || '';
+  const html = template.evaluate().setWidth(800).setHeight(590);
   SpreadsheetApp.getUi().showModalDialog(html, '6. カニバリ精査結果を登録する');
 }
 
 function sbosSetOutputFolder(folderId, folderName) {
-  sbosSetSetting_('output_folder_id', String(folderId || ''));
-  sbosSetSetting_('output_folder_name', String(folderName || 'マイドライブ'));
-  return {folderId:String(folderId || ''), folderName:String(folderName || 'マイドライブ')};
+  const id = String(folderId || '');
+  const name = String(folderName || 'マイドライブ');
+  if (id) DriveApp.getFolderById(id).getName(); // access validation
+  sbosSetSetting_('output_folder_id', id);
+  sbosSetSetting_('output_folder_name', name);
+  // 初回は同じフォルダーをキーワード読込開始位置にも使う。
+  if (!sbosGetSetting_('input_folder_id')) {
+    sbosSetSetting_('input_folder_id', id);
+    sbosSetSetting_('input_folder_name', name);
+  }
+  return {folderId:id, folderName:name};
+}
+
+function sbosGetOutputFolder_() {
+  const id = String(sbosGetSetting_('output_folder_id') || '');
+  const name = String(sbosGetSetting_('output_folder_name') || '');
+  if (id) {
+    const folder = DriveApp.getFolderById(id);
+    return {folder:folder, id:id, name:folder.getName()};
+  }
+  if (name === 'マイドライブ') {
+    return {folder:DriveApp.getRootFolder(), id:'', name:'マイドライブ'};
+  }
+  throw new Error('保存先フォルダーが未設定です。「追加の操作 → 保存先を設定する」から設定してください。');
 }
 
 function sbosListDriveFiles(folderId, pickerMode) {
@@ -343,6 +370,17 @@ function sbosImportDriveFile(fileId) {
     text = blob.getDataAsString('UTF-8').replace(/^\uFEFF/, '');
   }
   const result = sbosParseKeywordText_(text, name);
+  const parents = file.getParents();
+  if (parents.hasNext()) {
+    const p = parents.next();
+    sbosSetSetting_('input_folder_id', p.getId());
+    sbosSetSetting_('input_folder_name', p.getName());
+    result.meta.folderName = p.getName();
+  } else {
+    sbosSetSetting_('input_folder_id', '');
+    sbosSetSetting_('input_folder_name', 'マイドライブ');
+    result.meta.folderName = 'マイドライブ';
+  }
   sbosWriteImportedKeywords_(result.rows, result.meta);
   return result.meta;
 }
@@ -494,11 +532,24 @@ function sbosMarkPrimaryCandidates_() {
 // Source consolidated from: Screening.gs
 // ============================================================================
 function sbosStartScreening() {
+  const meta = sbosStartScreeningFromDialog();
+  sbosShowWorkflowResult_(
+    '一次選抜・4語深掘り完了',
+    '<b>SERP精査対象:</b> ' + meta.serpCount + '件<br>' +
+    '<b>新規4語深掘り候補:</b> ' + meta.generated4 + '件<br><br>' +
+    'GENERATED_4WORDは需要未確認です。SERP精査で実在需要と競合を確認するまでGREENにはしません。',
+    '3. SERP精査Packageを作成',
+    'sbosCreateSerpReviewPackage'
+  );
+  return meta;
+}
+
+function sbosStartScreeningFromDialog() {
   sbosEnsureSheets_();
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.KEYWORDS);
   if (sh.getLastRow() < 2) throw new Error('先に「1. キーワードファイルを読み込む」を実行してください。');
   sbosSetState_('status', SBOS_STATUS.SCREENING_RUNNING);
-  sbosRunScreening_();
+  return sbosRunScreening_(true);
 }
 
 function sbosRunScreening_() {
@@ -622,10 +673,10 @@ function sbosApplyCandidateFormatting_() {
       const st = sbosStatusCode_(r[1]);
       const creator = r[10];
       if (creator === '作成済み') {
-        sh.getRange(row,1,1,13).setBackground('#eeeeee').setFontColor('#777777');
+        sh.getRange(row,1,1,17).setBackground('#eeeeee').setFontColor('#777777');
         return;
       }
-      sh.getRange(row,1,1,13).setFontColor('#202124').setBackground(null);
+      sh.getRange(row,1,1,17).setFontColor('#202124').setBackground(null);
       let bg = '#f1f3f4';
       if (st === 'CANNIBAL_PENDING' || st === 'YELLOW') bg = '#fff2cc';
       if (st === 'BLOCK' || st === 'CLUSTERED') bg = '#e6e6e6';
@@ -721,9 +772,10 @@ function sbosCreateSerpReviewPackage() {
   ];
   const safeSite = sbosSafeFilename_(siteName || 'Unassigned-Site');
   const stamp = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
-  const zipName = 'SIMS-Blue-Ocean-Screener-' + safeSite + '-ChatGPT-SERP-Review-' + stamp + '.zip';
+  const zipName = 'SIMS-BOS-' + safeSite + '-ChatGPT-SERP-Review-' + stamp + '.zip';
   const zipBlob = Utilities.zip(blobs, zipName);
-  const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+  const outFolder = sbosGetOutputFolder_();
+  const folder = outFolder.folder;
   const file = folder.createFile(zipBlob);
 
   for (let i = 0; i < values.length; i++) {
@@ -1172,8 +1224,8 @@ function sbosCreateCannibalReviewPackageFromEvidence(fileId) {
     stage = '保存先確認';
     const siteName = sbosGetSetting_('site_name') || 'Unknown-Site';
     const siteUrl = sbosGetSetting_('site_url') || '';
-    const folderId = sbosGetSetting_('output_folder_id');
-    const folder = folderId ? DriveApp.getFolderById(folderId) : DriveApp.getRootFolder();
+    const outFolder = sbosGetOutputFolder_();
+    const folder = outFolder.folder;
 
     stage = '依頼データ作成';
     const ts = Utilities.formatDate(new Date(), Session.getScriptTimeZone() || 'Asia/Tokyo', 'yyyyMMdd-HHmmss');
@@ -1212,7 +1264,7 @@ function sbosCreateCannibalReviewPackageFromEvidence(fileId) {
       evidenceBlob
     ];
     const safeSite = sbosSafeFilePart_(siteName);
-    const zipName = 'SIMS-Blue-Ocean-Screener-' + safeSite + '-ChatGPT-Cannibal-Review-' + ts + '.zip';
+    const zipName = 'SIMS-BOS-' + safeSite + '-ChatGPT-Cannibal-Review-' + ts + '.zip';
     const zipBlob = Utilities.zip(blobs, zipName);
 
     stage = 'Google Drive保存';
@@ -1254,7 +1306,7 @@ function sbosCreateCreatorReferral() {
   ).setWidth(760).setHeight(520);
   SpreadsheetApp.getUi().showModalDialog(html, '8. Creator依頼文を作成する');
   sh.getRange(row,11).setValue('作成済み');
-  sh.getRange(row,1,1,13).setBackground('#eeeeee').setFontColor('#777777');
+  sh.getRange(row,1,1,17).setBackground('#eeeeee').setFontColor('#777777');
   sbosRefreshHomeSummary_();
 }
 
@@ -1289,6 +1341,74 @@ function sbosBuildCreatorReferral_(v) {
     '## Creatorへの指示',
     'これは新規記事作成案件です。既存記事のリライト案件として処理しないでください。'
   ].join('\n');
+}
+
+
+function sbosShowWorkflowResult_(title, bodyHtml, primaryLabel, primaryFunction) {
+  const safeTitle = sbosEscapeHtml_(title || '処理完了');
+  const fn = String(primaryFunction || '').replace(/[^A-Za-z0-9_]/g, '');
+  const label = sbosEscapeHtml_(primaryLabel || '次へ');
+  const html = HtmlService.createHtmlOutput(
+    '<!doctype html><html><head><base target="_top"><style>' +
+    'body{font-family:Arial,sans-serif;margin:0;color:#202124;background:#fff}' +
+    '.wrap{padding:20px}.head{font-size:18px;font-weight:700;margin-bottom:12px}' +
+    '.box{background:#e6f4ea;border:1px solid #ceead6;border-radius:8px;padding:14px;line-height:1.7}' +
+    '.foot{display:flex;justify-content:flex-end;gap:10px;padding-top:18px}' +
+    'button{border:0;border-radius:6px;padding:9px 16px;font-weight:600;cursor:pointer}' +
+    '.primary{background:#1a73e8;color:#fff}.secondary{background:#f1f3f4;color:#3c4043}' +
+    '.spin{display:none;margin-right:auto;align-items:center;gap:8px;color:#5f6368;font-size:12px}' +
+    '.spinner{width:16px;height:16px;border:2px solid #dadce0;border-top-color:#1a73e8;border-radius:50%;animation:r .8s linear infinite}@keyframes r{to{transform:rotate(360deg)}}' +
+    '</style></head><body><div class="wrap"><div class="head">' + safeTitle + '</div>' +
+    '<div class="box">' + bodyHtml + '</div><div class="foot"><div id="spin" class="spin"><span class="spinner"></span>処理中…</div>' +
+    (fn ? '<button class="primary" onclick="nextStep()">' + label + '</button>' : '') +
+    '<button class="secondary" onclick="google.script.host.close()">閉じる</button></div></div>' +
+    '<script>function nextStep(){document.getElementById("spin").style.display="flex";google.script.run.withSuccessHandler(function(){google.script.host.close();}).withFailureHandler(function(e){document.getElementById("spin").style.display="none";alert(e&&e.message?e.message:e);}).' + fn + '();}</script>' +
+    '</body></html>'
+  ).setWidth(620).setHeight(330);
+  SpreadsheetApp.getUi().showModalDialog(html, title || '処理完了');
+}
+
+
+function sbosRegisterSbmArticleResult() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+  const row = sh.getActiveRange().getRow();
+  if (row < 2) {
+    SpreadsheetApp.getUi().alert('Candidatesシートで、SBMへ登録したGREEN候補の行を選択してください。');
+    return;
+  }
+  const v = sh.getRange(row,1,1,17).getDisplayValues()[0];
+  if (sbosStatusCode_(v[1]) !== 'GREEN') {
+    SpreadsheetApp.getUi().alert('SBM登録結果は最終GREEN候補に記録してください。現在の判定: ' + v[1]);
+    return;
+  }
+  const ui = SpreadsheetApp.getUi();
+  const aid = ui.prompt('9. SBM登録結果を記録する', 'SBMで発行されたArticle ID（例: A000122）を入力してください。', ui.ButtonSet.OK_CANCEL);
+  if (aid.getSelectedButton() !== ui.Button.OK) return;
+  const articleId = aid.getResponseText().trim();
+  if (!articleId) return;
+
+  const urlr = ui.prompt('9. SBM登録結果を記録する', '公開URLを入力してください。まだ未確定なら空欄のままOKを押してください。', ui.ButtonSet.OK_CANCEL);
+  if (urlr.getSelectedButton() !== ui.Button.OK) return;
+  const url = urlr.getResponseText().trim();
+
+  sh.getRange(row,11).setValue('SBM登録済み');
+  sh.getRange(row,14).setValue(articleId);
+  sh.getRange(row,15).setValue(url);
+  sh.getRange(row,16).setValue('MONITORING');
+  sh.getRange(row,17).setValue(sbosNow_());
+  sbosSetState_('last_sbm_link_article_id', articleId);
+  sbosSetHomeStatus_('SBM登録済み・モニター中: ' + articleId);
+  sbosApplyCandidateFormatting_();
+
+  sbosShowWorkflowResult_(
+    'SBM登録結果をBOSへ記録しました',
+    '<b>Article ID:</b> ' + sbosEscapeHtml_(articleId) + '<br>' +
+    '<b>状態:</b> MONITORING<br>' +
+    (url ? '<b>公開URL:</b> ' + sbosEscapeHtml_(url) + '<br>' : '') +
+    '<br>今後SBMの実績データと紐付けて、Blue Ocean判定の成功度を追跡できます。',
+    '7. 候補一覧を確認',
+    'sbosOpenCandidates'
+  );
 }
 
 // ============================================================================
@@ -1476,6 +1596,8 @@ function sbosInitSettings_() {
     ['site_url', ''],
     ['output_folder_id', ''],
     ['output_folder_name', ''],
+    ['input_folder_id', ''],
+    ['input_folder_name', ''],
     ['serp_provider', 'CHATGPT_PACKAGE'],
     ['serp_api_key', '']
   ];
@@ -1499,13 +1621,14 @@ function sbosInitKeywords_() {
 
 function sbosInitCandidates_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
-  if (sh.getLastRow() === 0) sh.getRange(1,1,1,13).clear();
-  sh.getRange(1,1,1,13).setValues([[
+  if (sh.getLastRow() === 0) sh.getRange(1,1,1,17).clear();
+  sh.getRange(1,1,1,17).setValues([[
     'Rank','状態','Main Keyword','Words','Pre Score','Blue Ocean Score','Cannibalization','Search Intent',
-    'Evidence Summary','Source','Creator Status','Intent Key','SERP Status'
+    'Evidence Summary','Source','Creator Status','Intent Key','SERP Status',
+    'SBM Article ID','Published URL','BOS Outcome','SBM Linked At'
   ]]);
   sh.setFrozenRows(1);
-  sh.getRange(1,1,1,13).setFontWeight('bold');
+  sh.getRange(1,1,1,17).setFontWeight('bold');
 
   if (sh.getLastRow() >= 2) {
     const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getValues();

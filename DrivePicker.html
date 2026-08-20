@@ -3,140 +3,139 @@
 <head>
   <base target="_top">
   <style>
-    body{font-family:Arial,sans-serif;margin:0;color:#202124}
-    .bar{padding:10px 14px;border-bottom:1px solid #ddd;display:flex;gap:8px;align-items:center}
-    #path{flex:1;font-size:13px;color:#5f6368}
-    .list{height:360px;overflow:auto}
-    .row{padding:10px 14px;border-bottom:1px solid #eee;cursor:pointer;display:flex;gap:10px;align-items:center}
-    .row:hover{background:#f6f8fa}
-    .row.selected{background:#e8f0fe;outline:1px solid #8ab4f8}
-    .check{width:22px;text-align:center;font-weight:bold;color:#1a73e8}
-    .name{flex:1}
-    .type{width:70px;color:#777;font-size:12px}
-    .footer{padding:10px 14px;border-top:1px solid #ddd;display:flex;gap:8px;align-items:center}
-    #msg{flex:1;font-size:12px;color:#5f6368;white-space:normal}
-    button{padding:7px 14px}
-    button:disabled{opacity:.45;cursor:not-allowed}
+    :root{--blue:#1a73e8;--blue2:#174ea6;--line:#dadce0;--text:#202124;--muted:#5f6368;--soft:#f8fafd;--green:#e6f4ea;--yellow:#fef7e0}
+    *{box-sizing:border-box}
+    body{font-family:Arial,sans-serif;margin:0;color:var(--text);background:#fff}
+    .title{padding:14px 16px 8px;font-size:18px;font-weight:700;color:var(--blue2)}
+    .guide{margin:0 16px 10px;padding:10px 12px;border:1px solid #d2e3fc;border-radius:8px;background:#f8fbff;font-size:12px;line-height:1.55;color:#3c4043}
+    .bar{padding:9px 16px;border-top:1px solid #eef0f2;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;background:var(--soft)}
+    #path{flex:1;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+    .list{height:310px;overflow:auto}
+    .row{padding:10px 16px;border-bottom:1px solid #eee;cursor:pointer;display:flex;gap:10px;align-items:center}
+    .row:hover{background:#f6f8fa}.row.selected{background:#e8f0fe;outline:1px solid #8ab4f8}
+    .check{width:22px;text-align:center;font-weight:bold;color:var(--blue)}.name{flex:1}.type{width:76px;color:#777;font-size:12px}
+    .footer{padding:11px 16px;border-top:1px solid var(--line);display:flex;gap:8px;align-items:center;min-height:58px}
+    #msg{flex:1;font-size:12px;color:var(--muted);white-space:normal}
+    button{padding:8px 14px;border:1px solid var(--line);border-radius:6px;background:#fff;cursor:pointer;font-weight:600}
+    button.primary{background:var(--blue);border-color:var(--blue);color:#fff}button:disabled{opacity:.45;cursor:not-allowed}
+    #busy{display:none;position:fixed;inset:0;background:rgba(255,255,255,.82);z-index:20;align-items:center;justify-content:center;flex-direction:column;gap:12px}
+    .spinner{width:34px;height:34px;border:4px solid #dfe3e7;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
+    @keyframes spin{to{transform:rotate(360deg)}}#busyText{font-size:13px;color:#3c4043}
+    #result{display:none;padding:18px 20px}
+    .resultBox{background:var(--green);border:1px solid #ceead6;border-radius:8px;padding:14px;line-height:1.7;font-size:13px;white-space:pre-line}
+    .resultActions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
   </style>
 </head>
 <body>
-  <div class="bar">
-    <button onclick="goRoot()">ルート</button>
-    <button id="upBtn" onclick="goUp()" disabled>一つ上へ</button>
-    <span id="path">マイドライブ</span>
+  <div id="pickerView">
+    <div id="dialogTitle" class="title"></div>
+    <div id="guide" class="guide"></div>
+    <div class="bar">
+      <button onclick="goRoot()">ルート</button>
+      <button id="upBtn" onclick="goUp()" disabled>一つ上へ</button>
+      <span id="path">マイドライブ</span>
+    </div>
+    <div id="list" class="list"></div>
+    <div class="footer">
+      <span id="msg">ファイルを選択してください。</span>
+      <button id="selectFolderBtn" class="primary" onclick="selectCurrentFolder()" style="display:none">このフォルダーを保存先にする</button>
+      <button id="confirmBtn" class="primary" onclick="confirmSelection()" disabled>このファイルを選ぶ</button>
+      <button onclick="google.script.host.close()">閉じる</button>
+    </div>
   </div>
-  <div id="list" class="list"></div>
-  <div class="footer">
-    <span id="msg">ファイルを選択してください。</span>
-    <button id="selectFolderBtn" onclick="selectCurrentFolder()" style="display:none">このフォルダーを保存先にする</button>
-    <button id="confirmBtn" onclick="confirmSelection()" disabled>このファイルを選ぶ</button>
-    <button onclick="google.script.host.close()">閉じる</button>
+
+  <div id="result">
+    <div id="resultTitle" class="title" style="padding-left:0"></div>
+    <div id="resultBox" class="resultBox"></div>
+    <div class="resultActions">
+      <button id="nextBtn" class="primary" style="display:none"></button>
+      <button onclick="google.script.host.close()">閉じる</button>
+    </div>
   </div>
+
+  <div id="busy"><div class="spinner"></div><div id="busyText">処理中です…</div></div>
 
 <script>
 const pickerMode='<?!= pickerMode ?>';
-let folderId='', parentId='', folderName='マイドライブ';
-let selectedFile=null;
+const startFolderId='<?!= startFolderId ?>';
+let folderId='', parentId='', folderName='マイドライブ', selectedFile=null;
 
-function isFileMode(){
-  return pickerMode==='file'||pickerMode==='serp_result'||pickerMode==='cannibal_evidence'||pickerMode==='cannibal_result';
-}
+const MODE={
+  file:{title:'1. キーワードファイルを読み込む',guide:'CSV/TSVのキーワードファイルを選びます。前回使用したフォルダー、または設定済みフォルダーから開始します。読み込み後も結果は保持され、閉じても次回その続きから進めます。'},
+  folder:{title:'保存先フォルダーを設定する',guide:'BOSが生成するSERP精査・カニバリ精査Packageの保存先を選びます。初回設定時は、このフォルダーをキーワード読込の開始位置にも使用します。'},
+  serp_result:{title:'4. SERP精査結果を登録する',guide:'ChatGPTがSERP精査Packageを確認して返した SIMS_BOS_SERP_REVIEW_RESULT_V1 のJSONファイルを選びます。登録後、GREEN/YELLOW/BLOCKの概要を表示し、そのままカニバリ精査へ進めます。'},
+  cannibal_evidence:{title:'5. カニバリ精査用Evidenceを選ぶ',guide:'ここで選ぶのは、対象ブログの既存記事情報を収録したEvidenceファイルです。Site Collector / Site Diagnosis等で作成した、既存記事・URL・本文や検索データを含むEvidenceを選んでください。BOSはSERP GREEN候補とこのEvidenceをまとめ、ChatGPTへ渡すカニバリ精査Packageを作成します。'},
+  cannibal_result:{title:'6. カニバリ精査結果を登録する',guide:'ChatGPTがカニバリ精査Packageを確認して返した SIMS_BOS_CANNIBAL_REVIEW_RESULT_V1 のJSONファイルを選びます。登録後、最終GREEN候補を確認できます。'}
+};
+
+function isFileMode(){return pickerMode!=='folder'}
+function setBusy(on,text){document.getElementById('busy').style.display=on?'flex':'none';if(text)document.getElementById('busyText').textContent=text}
 function load(id){
-  folderId=id||'';
-  selectedFile=null;
-  updateConfirm();
-  document.getElementById('msg').textContent='読み込み中…';
-  google.script.run.withSuccessHandler(render).withFailureHandler(showError).sbosListDriveFiles(folderId,pickerMode);
+  folderId=(id===undefined||id===null)?'':id; selectedFile=null; updateConfirm(); setBusy(true,'Google Driveを読み込んでいます…');
+  google.script.run.withSuccessHandler(p=>{setBusy(false);render(p)}).withFailureHandler(showError).sbosListDriveFiles(folderId,pickerMode);
 }
 function render(payload){
-  folderId=payload.folderId||'';
-  parentId=payload.parentId||'';
-  folderName=payload.folderName||'マイドライブ';
-  document.getElementById('path').textContent=folderName;
-  document.getElementById('upBtn').disabled=!folderId;
+  folderId=payload.folderId||''; parentId=payload.parentId||''; folderName=payload.folderName||'マイドライブ';
+  document.getElementById('path').textContent=folderName; document.getElementById('upBtn').disabled=!folderId;
   document.getElementById('selectFolderBtn').style.display=pickerMode==='folder'?'inline-block':'none';
   document.getElementById('confirmBtn').style.display=isFileMode()?'inline-block':'none';
-
-  const items=(payload.items||[]).filter(x=>isFileMode()||x.type==='folder');
-  const el=document.getElementById('list');
-  el.innerHTML='';
+  const items=(payload.items||[]).filter(x=>isFileMode()||x.type==='folder'), el=document.getElementById('list'); el.innerHTML='';
   items.forEach(x=>{
-    const d=document.createElement('div');
-    d.className='row';
-    d.dataset.id=x.id;
+    const d=document.createElement('div'); d.className='row';
     d.innerHTML='<span class="check"></span><span class="type">'+(x.type==='folder'?'フォルダー':'ファイル')+'</span><span class="name"></span>';
     d.querySelector('.name').textContent=x.name;
-    if(x.type==='folder'){
-      d.onclick=()=>load(x.id);
-    }else{
-      d.onclick=()=>selectFile(x,d);
-    }
-    el.appendChild(d);
+    d.onclick=x.type==='folder'?()=>load(x.id):()=>selectFile(x,d); el.appendChild(d);
   });
-  document.getElementById('msg').textContent=items.length+'件。ファイルを選択してから「このファイルを選ぶ」を押してください。';
+  document.getElementById('msg').textContent=items.length+'件。'+(pickerMode==='folder'?'この場所を保存先にする場合は右のボタンを押してください。':'ファイルを選択してください。');
 }
 function selectFile(file,rowEl){
-  document.querySelectorAll('.row').forEach(r=>{
-    r.classList.remove('selected');
-    const c=r.querySelector('.check'); if(c)c.textContent='';
-  });
-  selectedFile={id:file.id,name:file.name};
-  rowEl.classList.add('selected');
-  rowEl.querySelector('.check').textContent='✓';
-  document.getElementById('msg').textContent='選択中: '+file.name;
-  updateConfirm();
+  document.querySelectorAll('.row').forEach(r=>{r.classList.remove('selected');const c=r.querySelector('.check');if(c)c.textContent=''});
+  selectedFile={id:file.id,name:file.name}; rowEl.classList.add('selected'); rowEl.querySelector('.check').textContent='✓';
+  document.getElementById('msg').textContent='選択中: '+file.name; updateConfirm();
 }
-function updateConfirm(){
-  document.getElementById('confirmBtn').disabled=!selectedFile;
+function updateConfirm(){document.getElementById('confirmBtn').disabled=!selectedFile}
+function showResult(title,text,nextLabel,nextAction){
+  setBusy(false); document.getElementById('pickerView').style.display='none'; document.getElementById('result').style.display='block';
+  document.getElementById('resultTitle').textContent=title; document.getElementById('resultBox').textContent=text;
+  const b=document.getElementById('nextBtn'); b.style.display=nextAction?'inline-block':'none'; b.textContent=nextLabel||'次へ';
+  b.onclick=()=>runNext(nextAction);
+}
+function runNext(action){
+  if(!action)return;
+  if(action==='close'){google.script.host.close();return;}
+  setBusy(true,'次の処理へ進んでいます…');
+  if(action==='screening'){
+    google.script.run.withSuccessHandler(meta=>showResult('一次選抜・4語深掘り完了','SERP精査対象: '+meta.serpCount+'件\n新規4語深掘り候補: '+meta.generated4+'件\n\nGENERATED_4WORDは需要未確認です。SERP精査で確認するまでGREENにはしません。','3. SERP精査Packageを作成','serp_package')).withFailureHandler(showError).sbosStartScreeningFromDialog(); return;
+  }
+  if(action==='serp_package'){google.script.run.withSuccessHandler(()=>google.script.host.close()).withFailureHandler(showError).sbosCreateSerpReviewPackage();return}
+  if(action==='cannibal_picker'){google.script.run.withSuccessHandler(()=>google.script.host.close()).withFailureHandler(showError).sbosShowCannibalEvidencePicker();return}
+  if(action==='candidates'){google.script.run.withSuccessHandler(()=>google.script.host.close()).withFailureHandler(showError).sbosOpenCandidates();return}
+  google.script.host.close();
 }
 function confirmSelection(){
-  if(!selectedFile)return;
-  const id=selectedFile.id, name=selectedFile.name;
-  document.getElementById('confirmBtn').disabled=true;
-  document.getElementById('msg').textContent='「'+name+'」を処理中…';
-
+  if(!selectedFile)return; const id=selectedFile.id,name=selectedFile.name; document.getElementById('confirmBtn').disabled=true;
   if(pickerMode==='serp_result'){
-    google.script.run.withSuccessHandler(meta=>{
-      alert('SERP精査結果を登録しました\n反映: '+meta.applied+'件\nGREEN: '+meta.green+'\nYELLOW: '+meta.yellow+'\nBLOCK: '+meta.block+'\nIntent統合: '+meta.clustered+'件\n\n次はカニバリ精査Packageを作成してください。');
-      google.script.host.close();
-    }).withFailureHandler(showError).sbosImportSerpReviewResult(id);
-    return;
+    setBusy(true,'SERP精査結果を登録しています…');
+    google.script.run.withSuccessHandler(m=>showResult('SERP精査結果を登録しました','反映: '+m.applied+'件\nGREEN: '+m.green+'\nYELLOW: '+m.yellow+'\nBLOCK: '+m.block+'\nIntent統合: '+m.clustered+'件','5. カニバリ精査Packageへ','cannibal_picker')).withFailureHandler(showError).sbosImportSerpReviewResult(id);return;
   }
   if(pickerMode==='cannibal_result'){
-    google.script.run.withSuccessHandler(meta=>{
-      alert('カニバリ精査結果を登録しました\n反映: '+meta.applied+'件\nGREEN: '+meta.green+'\nYELLOW: '+meta.yellow+'\nBLOCK: '+meta.block+'\n\n次はGREEN候補を確認し、Creator依頼文を作成してください。');
-      google.script.host.close();
-    }).withFailureHandler(showError).sbosImportCannibalReviewResult(id);
-    return;
+    setBusy(true,'カニバリ精査結果を登録しています…');
+    google.script.run.withSuccessHandler(m=>showResult('カニバリ精査結果を登録しました','反映: '+m.applied+'件\nGREEN: '+m.green+'\nYELLOW: '+m.yellow+'\nBLOCK: '+m.block+'\n\nGREEN候補を確認し、Creator依頼文を作成してください。','7. GREEN候補を確認','candidates')).withFailureHandler(showError).sbosImportCannibalReviewResult(id);return;
   }
   if(pickerMode==='cannibal_evidence'){
-    google.script.run.withSuccessHandler(meta=>{
-      alert('カニバリ精査Packageを作成しました\n候補: '+meta.count+'件\n'+meta.fileName+'\n\n次は生成ZIPをChatGPTへアップロードしてください。');
-      google.script.host.close();
-    }).withFailureHandler(showError).sbosCreateCannibalReviewPackageFromEvidence(id);
-    return;
+    setBusy(true,'Evidenceを読み込み、カニバリ精査Packageを作成しています…');
+    google.script.run.withSuccessHandler(m=>showResult('カニバリ精査Packageを作成しました','候補: '+m.count+'件\nファイル名: '+m.fileName+'\n保存先: '+m.folderName+'\n\n次は生成ZIPをChatGPTへアップロードしてください。','閉じる（ChatGPTへアップロード）','close')).withFailureHandler(showError).sbosCreateCannibalReviewPackageFromEvidence(id);return;
   }
-  google.script.run.withSuccessHandler(meta=>{
-    alert('読み込み完了\n総件数: '+meta.total+'\n3語: '+meta.three+'\n4語: '+meta.four+'\n\n次は「2. ブルーオーシャン候補を探索する」を実行してください。');
-    google.script.host.close();
-  }).withFailureHandler(showError).sbosImportDriveFile(id);
+  setBusy(true,'キーワードファイルを読み込んでいます…');
+  google.script.run.withSuccessHandler(m=>showResult('キーワード読込完了','総件数: '+m.total+'件\n3語: '+m.three+'件\n4語: '+m.four+'件\n読込フォルダー: '+(m.folderName||folderName)+'\n\nここで閉じても読み込み済み情報は保持されます。','2. ブルーオーシャン候補を探索','screening')).withFailureHandler(showError).sbosImportDriveFile(id);
 }
 function selectCurrentFolder(){
-  document.getElementById('msg').textContent='保存先を設定中…';
-  google.script.run.withSuccessHandler(meta=>{
-    alert('保存先を設定しました\n'+meta.folderName);
-    google.script.host.close();
-  }).withFailureHandler(showError).sbosSetOutputFolder(folderId,folderName);
+  setBusy(true,'保存先フォルダーを設定しています…');
+  google.script.run.withSuccessHandler(m=>showResult('保存先を設定しました','保存先: '+m.folderName+'\n\n今後のSERP精査・カニバリ精査Packageはこのフォルダーへ保存します。','閉じる','close')).withFailureHandler(showError).sbosSetOutputFolder(folderId,folderName);
 }
-function goRoot(){load('')}
-function goUp(){load(parentId||'')}
-function showError(e){
-  const detail=(e&&e.message)?e.message:String(e||'不明なエラー');
-  document.getElementById('msg').textContent='エラー: '+detail;
-  document.getElementById('confirmBtn').disabled=false;
-  alert(detail);
-}
-load('');
+function goRoot(){load('')} function goUp(){load(parentId||'')}
+function showError(e){setBusy(false);const d=(e&&e.message)?e.message:String(e||'不明なエラー');document.getElementById('msg').textContent='エラー: '+d;document.getElementById('confirmBtn').disabled=false;alert(d)}
+(function init(){const m=MODE[pickerMode]||MODE.file;document.getElementById('dialogTitle').textContent=m.title;document.getElementById('guide').textContent=m.guide;load(startFolderId||'')})();
 </script>
 </body>
 </html>
