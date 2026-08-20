@@ -1,32 +1,33 @@
-# SIMS Blue Ocean Screener v0.5.1
+# SIMS Blue Ocean Screener v0.5.2
 
-## Hotfix内容
-v0.5.0で、キーワード読込後の［2. ブルーオーシャン候補を探索］から実行すると、
-一次選抜完了時に旧Apps Script標準alertが発火し、［3. SERP精査Packageを作成］ボタンが表示されない実装漏れを修正しました。
+## UI PATCH
+実運用試験で確認した軽微なUI不具合を修正しました。
 
-## 修正
-- `sbosRunScreening_()` 内の旧「一次選抜・4語深掘り完了」標準alertを削除
-- 一次選抜処理は結果メタ情報を返すだけに統一
-- キーワード読込ダイアログからの遷移では、同じSIMS UI内で
-  `結果概要 → [3. SERP精査Packageを作成] → [閉じる]`
-  を表示
-- 「処理を再開する」から一次選抜へ戻った場合も同じ完了UIを使用
-- SERP精査Package作成成功時も旧標準alertを廃止し、SIMS共通結果ダイアログへ統一
-- 「処理状態」表示も共通結果ダイアログへ統一
+### 修正内容
+1. カニバリ精査Package作成完了画面
+   - 「閉じる（ChatGPTへアップロード）」と「閉じる」の二重表示を解消
+   - 外部作業が必要なため、ボタンは「閉じる」1個に統一
+   - 次工程を「ChatGPTで精査 → 返却JSONをDrive保存 → 6.結果登録」と明記
 
-## UI方針
-利用者向けの正常完了画面は原則、
-1. 処理名
-2. 結果概要
-3. 次に行う操作の青ボタン（アプリ内で直接遷移可能な場合）
-4. 閉じる
-の順に統一します。
+2. エラー時のスピナー
+   - request_id不一致、JSON契約エラー等のFailure時にbusy overlayを確実に解除
+   - alertを閉じた後もスピナーが残らないよう二重解除を実施
+   - 選択状態を維持し、再試行可能にする
 
-確認・エラー・入力不足など、利用者判断が必要な警告ダイアログは標準UIを残す場合があります。
+3. 完了ダイアログのスクロール
+   - 短い結果表示で不要なスクロールバーが出にくいよう寸法・overflowを調整
+   - 共通完了ダイアログも少し拡張
 
-## Apps Scriptで置換するファイル
-- `Code.gs` : 置換
-- `DrivePicker.html` : 置換
+## 変更ファイル
+- Code.gs : 置換
+- DrivePicker.html : 置換
+
+## 変更なし
+- 既存スプレッドシートデータ
+- SERP判定ロジック
+- カニバリ判定ロジック
+- Creator/SBM連携データ
+- 既に登録済みのBOS結果
 
 ## 推奨コミットメッセージ
-`fix: release SIMS Blue Ocean Screener v0.5.1 unified screening completion flow`
+fix: release SIMS Blue Ocean Screener v0.5.2 UI polish after end-to-end validation

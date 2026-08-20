@@ -1,4 +1,4 @@
-<!-- SIMS BOS v0.5.1 -->
+<!-- SIMS BOS v0.5.2 -->
 <!doctype html>
 <html>
 <head>
@@ -11,7 +11,7 @@
     .guide{margin:0 16px 10px;padding:10px 12px;border:1px solid #d2e3fc;border-radius:8px;background:#f8fbff;font-size:12px;line-height:1.55;color:#3c4043}
     .bar{padding:9px 16px;border-top:1px solid #eef0f2;border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;background:var(--soft)}
     #path{flex:1;font-size:13px;color:var(--muted);overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
-    .list{height:310px;overflow:auto}
+    .list{height:300px;overflow:auto}
     .row{padding:10px 16px;border-bottom:1px solid #eee;cursor:pointer;display:flex;gap:10px;align-items:center}
     .row:hover{background:#f6f8fa}.row.selected{background:#e8f0fe;outline:1px solid #8ab4f8}
     .check{width:22px;text-align:center;font-weight:bold;color:var(--blue)}.name{flex:1}.type{width:76px;color:#777;font-size:12px}
@@ -22,8 +22,8 @@
     #busy{display:none;position:fixed;inset:0;background:rgba(255,255,255,.82);z-index:20;align-items:center;justify-content:center;flex-direction:column;gap:12px}
     .spinner{width:34px;height:34px;border:4px solid #dfe3e7;border-top-color:var(--blue);border-radius:50%;animation:spin .8s linear infinite}
     @keyframes spin{to{transform:rotate(360deg)}}#busyText{font-size:13px;color:#3c4043}
-    #result{display:none;padding:18px 20px}
-    .resultBox{background:var(--green);border:1px solid #ceead6;border-radius:8px;padding:14px;line-height:1.7;font-size:13px;white-space:pre-line}
+    #result{display:none;padding:16px 20px;overflow:visible}
+    .resultBox{background:var(--green);border:1px solid #ceead6;border-radius:8px;padding:14px;line-height:1.65;font-size:13px;white-space:pre-line;overflow-wrap:anywhere}
     .resultActions{display:flex;justify-content:flex-end;gap:10px;margin-top:16px}
   </style>
 </head>
@@ -125,7 +125,7 @@ function confirmSelection(){
   }
   if(pickerMode==='cannibal_evidence'){
     setBusy(true,'Evidenceを読み込み、カニバリ精査Packageを作成しています…');
-    google.script.run.withSuccessHandler(m=>showResult('カニバリ精査Packageを作成しました','候補: '+m.count+'件\nファイル名: '+m.fileName+'\n保存先: '+m.folderName+'\n\n次は生成ZIPをChatGPTへアップロードしてください。','閉じる（ChatGPTへアップロード）','close')).withFailureHandler(showError).sbosCreateCannibalReviewPackageFromEvidence(id);return;
+    google.script.run.withSuccessHandler(m=>showResult('カニバリ精査Packageを作成しました','候補: '+m.count+'件\nファイル名: '+m.fileName+'\n保存先: '+m.folderName+'\n\n次はこのZIPをChatGPTへアップロードしてカニバリ精査を行ってください。返却JSONをGoogle Driveへ保存した後、「6. カニバリ精査結果を登録する」へ進みます。','','')).withFailureHandler(showError).sbosCreateCannibalReviewPackageFromEvidence(id);return;
   }
   setBusy(true,'キーワードファイルを読み込んでいます…');
   google.script.run.withSuccessHandler(m=>showResult('キーワード読込完了','総件数: '+m.total+'件\n3語: '+m.three+'件\n4語: '+m.four+'件\n読込フォルダー: '+(m.folderName||folderName)+'\n\nここで閉じても読み込み済み情報は保持されます。','2. ブルーオーシャン候補を探索','screening')).withFailureHandler(showError).sbosImportDriveFile(id);
@@ -135,7 +135,16 @@ function selectCurrentFolder(){
   google.script.run.withSuccessHandler(m=>showResult('保存先を設定しました','保存先: '+m.folderName+'\n\n今後のSERP精査・カニバリ精査Packageはこのフォルダーへ保存します。','閉じる','close')).withFailureHandler(showError).sbosSetOutputFolder(folderId,folderName);
 }
 function goRoot(){load('')} function goUp(){load(parentId||'')}
-function showError(e){setBusy(false);const d=(e&&e.message)?e.message:String(e||'不明なエラー');document.getElementById('msg').textContent='エラー: '+d;document.getElementById('confirmBtn').disabled=false;alert(d)}
+function showError(e){
+  setBusy(false);
+  const d=(e&&e.message)?e.message:String(e||'不明なエラー');
+  const msg=document.getElementById('msg'); if(msg)msg.textContent='エラー: '+d;
+  const confirm=document.getElementById('confirmBtn'); if(confirm)confirm.disabled=!selectedFile;
+  const next=document.getElementById('nextBtn'); if(next)next.disabled=false;
+  // alertを閉じた後も処理中オーバーレイが残らないよう、次イベントループでも解除を保証する。
+  setTimeout(()=>setBusy(false),0);
+  alert(d);
+}
 (function init(){const m=MODE[pickerMode]||MODE.file;document.getElementById('dialogTitle').textContent=m.title;document.getElementById('guide').textContent=m.guide;load(startFolderId||'')})();
 </script>
 </body>

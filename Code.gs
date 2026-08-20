@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.5.1
+ * SIMS Blue Ocean Screener v0.5.2
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.5.1
+ * SIMS Blue Ocean Screener v0.5.2
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.5.1';
+const SBOS_VERSION = '0.5.2';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -1372,7 +1372,7 @@ function sbosShowWorkflowResult_(title, bodyHtml, primaryLabel, primaryFunction)
     '<button class="secondary" onclick="google.script.host.close()">閉じる</button></div></div>' +
     '<script>function nextStep(){document.getElementById("spin").style.display="flex";google.script.run.withSuccessHandler(function(){google.script.host.close();}).withFailureHandler(function(e){document.getElementById("spin").style.display="none";alert(e&&e.message?e.message:e);}).' + fn + '();}</script>' +
     '</body></html>'
-  ).setWidth(620).setHeight(330);
+  ).setWidth(640).setHeight(360);
   SpreadsheetApp.getUi().showModalDialog(html, title || '処理完了');
 }
 
