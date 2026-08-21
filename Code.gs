@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.5.3
+ * SIMS Blue Ocean Screener v0.6.0
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.5.3
+ * SIMS Blue Ocean Screener v0.6.0
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.5.3';
+const SBOS_VERSION = '0.6.0';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -42,7 +42,13 @@ const SBOS_SHEETS = {
   SETTINGS: 'Settings',
   STATE: '_State',
   ARTICLES: '_ExistingArticles',
-  SERP_RESULTS: '_SerpReview'
+  SERP_RESULTS: '_SerpReview',
+  BLOG_SESSIONS: '_BlogSessions',
+  SESSION_KEYWORDS: '_SessionKeywords',
+  SESSION_CANDIDATES: '_SessionCandidates',
+  SESSION_SETTINGS: '_SessionSettings',
+  SESSION_STATE: '_SessionState',
+  SESSION_SERP: '_SessionSerpReview'
 };
 
 const SBOS_STATUS = {
@@ -189,7 +195,8 @@ function sbosBuildMenu_() {
     .addSubMenu(
       ui.createMenu('追加の操作')
         .addItem('処理を再開する', 'sbosResumeBatch')
-        .addItem('対象ブログを設定する', 'sbosShowSiteSettings')
+        .addItem('対象ブログを切り替える・再開する', 'sbosShowSiteSettings')
+        .addItem('現在のブログを保存する', 'sbosSaveCurrentBlogSessionManual')
         .addItem('保存先を設定する', 'sbosShowOutputSettings')
         .addItem('処理状態を確認する', 'sbosShowStatus')
     )
@@ -203,14 +210,64 @@ function sbosBuildMenu_() {
 // Source consolidated from: Setup.gs
 // ============================================================================
 function sbosShowSiteSettings() {
-  const ui = SpreadsheetApp.getUi();
-  const name = ui.prompt('対象ブログを設定する', 'ブログ名を入力してください。', ui.ButtonSet.OK_CANCEL);
-  if (name.getSelectedButton() !== ui.Button.OK) return;
-  const url = ui.prompt('対象ブログを設定する', 'ブログURLを入力してください。', ui.ButtonSet.OK_CANCEL);
-  if (url.getSelectedButton() !== ui.Button.OK) return;
-  sbosSetSetting_('site_name', name.getResponseText().trim());
-  sbosSetSetting_('site_url', url.getResponseText().trim());
-  SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.HOME).getRange('C6').setValue(name.getResponseText().trim());
+  sbosEnsureSheets_();
+  sbosSaveCurrentBlogSession_();
+
+  const sessions = sbosListBlogSessions_();
+  const currentKey = sbosCurrentSiteKey_();
+  const options = sessions.map(s => {
+    const selected = s.siteKey === currentKey ? ' selected' : '';
+    const label = s.siteName + ' — ' + s.siteUrl +
+      (s.siteKey === currentKey ? '（現在）' : '') +
+      ' / GREEN ' + s.green + ' / 未処理 ' + s.creatorPending;
+    return '<option value="' + sbosEscapeHtml_(s.siteKey) + '"' + selected + '>' +
+      sbosEscapeHtml_(label) + '</option>';
+  }).join('');
+
+  const currentName = sbosGetSetting_('site_name') || '';
+  const currentUrl = sbosGetSetting_('site_url') || '';
+
+  const html = HtmlService.createHtmlOutput(
+    '<!doctype html><html><head><base target="_top"><style>' +
+    'body{font-family:Arial,sans-serif;margin:0;color:#202124;background:#fff}' +
+    '.wrap{padding:20px}.title{font-size:20px;font-weight:700;margin-bottom:8px}' +
+    '.lead{font-size:13px;color:#5f6368;line-height:1.6;margin-bottom:16px}' +
+    '.box{border:1px solid #dadce0;border-radius:9px;padding:14px;margin-bottom:14px}' +
+    '.box h3{font-size:15px;margin:0 0 10px;color:#174ea6}' +
+    'select,input{width:100%;box-sizing:border-box;padding:9px 10px;border:1px solid #dadce0;border-radius:6px;margin:5px 0 10px;font-size:13px}' +
+    'label{font-size:12px;font-weight:700;color:#3c4043}' +
+    '.actions{display:flex;justify-content:flex-end;gap:9px}.subactions{display:flex;justify-content:flex-end;gap:9px;margin-top:5px}' +
+    'button{border:0;border-radius:6px;padding:9px 15px;font-weight:600;cursor:pointer}' +
+    '.primary{background:#1a73e8;color:#fff}.secondary{background:#f1f3f4;color:#3c4043}' +
+    '.busy{display:none;color:#5f6368;font-size:12px;margin-right:auto;align-self:center}' +
+    '.note{background:#f8fbff;border:1px solid #d2e3fc;border-radius:7px;padding:9px 11px;font-size:12px;line-height:1.5;margin-bottom:14px}' +
+    '</style></head><body><div class="wrap">' +
+    '<div class="title">対象ブログを切り替える・再開する</div>' +
+    '<div class="lead">ブログを切り替える前に、現在の Keywords・Candidates・SERP結果・Creator/SBM進捗・処理状態を自動保存します。以前のブログへ戻ると、保存地点から復元します。</div>' +
+    '<div class="note">現在: <b>' + sbosEscapeHtml_(currentName || '未設定') + '</b>' +
+      (currentUrl ? ' — ' + sbosEscapeHtml_(currentUrl) : '') + '</div>' +
+    '<div class="box"><h3>保存済みブログを再開</h3>' +
+      (sessions.length
+        ? '<label>ブログ</label><select id="saved">' + options + '</select>' +
+          '<div class="subactions"><button class="primary" onclick="openSaved()">このブログを開く</button></div>'
+        : '<div style="font-size:13px;color:#5f6368">保存済みブログはまだありません。</div>') +
+    '</div>' +
+    '<div class="box"><h3>新しいブログを開始</h3>' +
+      '<label>ブログ名</label><input id="newName" placeholder="例：ガジェット探検記">' +
+      '<label>ブログURL</label><input id="newUrl" placeholder="https://example.com/">' +
+      '<div class="subactions"><button class="primary" onclick="startNew()">新しいブログを開始</button></div>' +
+    '</div>' +
+    '<div class="actions"><span id="busy" class="busy">保存・復元中…</span><button class="secondary" onclick="google.script.host.close()">閉じる</button></div>' +
+    '<script>' +
+    'function busy(v){document.getElementById("busy").style.display=v?"inline":"none";}' +
+    'function fail(e){busy(false);alert(e&&e.message?e.message:e);}' +
+    'function done(m){busy(false);alert(m.message);google.script.host.close();}' +
+    'function openSaved(){const e=document.getElementById("saved");if(!e||!e.value)return;busy(true);google.script.run.withSuccessHandler(done).withFailureHandler(fail).sbosSwitchToSavedBlog(e.value);}' +
+    'function startNew(){const n=document.getElementById("newName").value.trim(),u=document.getElementById("newUrl").value.trim();if(!n||!u){alert("ブログ名とブログURLを入力してください。");return;}busy(true);google.script.run.withSuccessHandler(done).withFailureHandler(fail).sbosStartOrResumeBlog(n,u);}' +
+    '</script></div></body></html>'
+  ).setWidth(720).setHeight(620);
+
+  SpreadsheetApp.getUi().showModalDialog(html, '対象ブログを切り替える・再開する');
 }
 
 function sbosShowOutputSettings() {
@@ -230,6 +287,347 @@ function sbosSetSetting_(key, value) {
   const i = vals.findIndex(r => r[0] === key);
   if (i >= 0) sh.getRange(i+2,2).setValue(value);
   else sh.appendRow([key,value]);
+}
+
+
+// ============================================================================
+// Multi-Blog Session Store v0.6.0
+// ============================================================================
+function sbosNormalizeSiteUrl_(url) {
+  let s = String(url || '').trim().toLowerCase();
+  s = s.replace(/^https?:\/\//, '').replace(/^www\./, '');
+  s = s.replace(/[?#].*$/, '').replace(/\/+$/, '');
+  return s;
+}
+
+function sbosSiteKey_(siteName, siteUrl) {
+  const u = sbosNormalizeSiteUrl_(siteUrl);
+  if (u) return u;
+  return String(siteName || '').trim().toLowerCase().replace(/\s+/g, '_');
+}
+
+function sbosCurrentSiteKey_() {
+  return sbosSiteKey_(sbosGetSetting_('site_name'), sbosGetSetting_('site_url'));
+}
+
+function sbosSessionStoreNames_() {
+  return [
+    SBOS_SHEETS.SESSION_KEYWORDS,
+    SBOS_SHEETS.SESSION_CANDIDATES,
+    SBOS_SHEETS.SESSION_SETTINGS,
+    SBOS_SHEETS.SESSION_STATE,
+    SBOS_SHEETS.SESSION_SERP
+  ];
+}
+
+function sbosInitSessionStoreSheet_(name) {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(name);
+  if (!sh) sh = ss.insertSheet(name);
+  if (!sh.isSheetHidden()) sh.hideSheet();
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1,1,1,3).setValues([['SiteKey','RowIndex','RowJson']]).setFontWeight('bold');
+  }
+  return sh;
+}
+
+function sbosInitBlogSessionsSheet_() {
+  const ss = SpreadsheetApp.getActive();
+  let sh = ss.getSheetByName(SBOS_SHEETS.BLOG_SESSIONS);
+  if (!sh) sh = ss.insertSheet(SBOS_SHEETS.BLOG_SESSIONS);
+  if (!sh.isSheetHidden()) sh.hideSheet();
+  const headers = [
+    'SiteKey','SiteName','SiteURL','SavedAt','Status','InputFile',
+    'KeywordCount','CandidateCount','GreenCount','CreatorPending','SbmLinked'
+  ];
+  if (sh.getLastRow() === 0) {
+    sh.getRange(1,1,1,headers.length).setValues([headers]).setFontWeight('bold');
+  } else {
+    sh.getRange(1,1,1,headers.length).setValues([headers]).setFontWeight('bold');
+  }
+  return sh;
+}
+
+function sbosReplaceSessionSnapshot_(storeName, siteKey, sourceSheetName) {
+  const ss = SpreadsheetApp.getActive();
+  const store = sbosInitSessionStoreSheet_(storeName);
+  const source = ss.getSheetByName(sourceSheetName);
+  const keep = [];
+
+  if (store.getLastRow() >= 2) {
+    const existing = store.getRange(2,1,store.getLastRow()-1,3).getValues();
+    existing.forEach(r => {
+      if (String(r[0] || '') !== siteKey) keep.push(r);
+    });
+  }
+
+  const add = [];
+  if (source && source.getLastRow() > 0 && source.getLastColumn() > 0) {
+    const vals = source.getRange(1,1,source.getLastRow(),source.getLastColumn()).getDisplayValues();
+    vals.forEach((row, i) => add.push([siteKey, i + 1, JSON.stringify(row)]));
+  }
+
+  store.clearContents();
+  store.getRange(1,1,1,3).setValues([['SiteKey','RowIndex','RowJson']]).setFontWeight('bold');
+  const all = keep.concat(add);
+  if (all.length) store.getRange(2,1,all.length,3).setValues(all);
+}
+
+function sbosRestoreSessionSnapshot_(storeName, siteKey, targetSheetName) {
+  const ss = SpreadsheetApp.getActive();
+  const store = sbosInitSessionStoreSheet_(storeName);
+  let target = ss.getSheetByName(targetSheetName);
+  if (!target) target = ss.insertSheet(targetSheetName);
+
+  const rows = [];
+  if (store.getLastRow() >= 2) {
+    const vals = store.getRange(2,1,store.getLastRow()-1,3).getValues();
+    vals.forEach(r => {
+      if (String(r[0] || '') !== siteKey) return;
+      try {
+        const parsed = JSON.parse(String(r[2] || '[]'));
+        rows.push({index:Number(r[1]) || 0, values:Array.isArray(parsed) ? parsed : []});
+      } catch(e) {}
+    });
+  }
+  rows.sort((a,b) => a.index - b.index);
+
+  target.clearContents();
+  if (!rows.length) return false;
+
+  let width = 1;
+  rows.forEach(r => width = Math.max(width, r.values.length));
+  const out = rows.map(r => {
+    const x = r.values.slice();
+    while (x.length < width) x.push('');
+    return x;
+  });
+  target.getRange(1,1,out.length,width).setValues(out);
+  return true;
+}
+
+function sbosClearSbosDocumentProperties_() {
+  const props = PropertiesService.getDocumentProperties();
+  const all = props.getProperties();
+  Object.keys(all).forEach(k => {
+    if (k.indexOf('SBOS_') === 0) props.deleteProperty(k);
+  });
+}
+
+function sbosSyncStatePropertiesFromSheet_() {
+  sbosClearSbosDocumentProperties_();
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.STATE);
+  if (!sh || sh.getLastRow() < 2) return;
+  const vals = sh.getRange(2,1,sh.getLastRow()-1,2).getDisplayValues();
+  const props = PropertiesService.getDocumentProperties();
+  vals.forEach(r => {
+    const key = String(r[0] || '').trim();
+    if (key) props.setProperty('SBOS_' + key, String(r[1] || ''));
+  });
+}
+
+function sbosSessionCounts_() {
+  const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+  let candidateCount=0, green=0, creatorPending=0, sbmLinked=0;
+  if (sh && sh.getLastRow() >= 2) {
+    const vals = sh.getRange(2,1,sh.getLastRow()-1,17).getDisplayValues();
+    candidateCount = vals.length;
+    vals.forEach(r => {
+      if (sbosStatusCode_(r[1]) === 'GREEN') {
+        green++;
+        const creator = String(r[10] || '');
+        const articleId = String(r[13] || '');
+        if (articleId) sbmLinked++;
+        else if (creator !== 'SBM登録済み') creatorPending++;
+      }
+    });
+  }
+  const kw = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.KEYWORDS);
+  const keywordCount = kw && kw.getLastRow() >= 2 ? kw.getLastRow()-1 : 0;
+  return {keywordCount,candidateCount,green,creatorPending,sbmLinked};
+}
+
+function sbosUpsertBlogSessionMeta_(siteKey) {
+  const sh = sbosInitBlogSessionsSheet_();
+  const name = sbosGetSetting_('site_name') || '';
+  const url = sbosGetSetting_('site_url') || '';
+  const c = sbosSessionCounts_();
+  const row = [
+    siteKey,name,url,sbosNow_(),sbosGetState_('status') || '',
+    sbosGetState_('input_file_name') || '',
+    c.keywordCount,c.candidateCount,c.green,c.creatorPending,c.sbmLinked
+  ];
+
+  let hit = -1;
+  if (sh.getLastRow() >= 2) {
+    const keys = sh.getRange(2,1,sh.getLastRow()-1,1).getDisplayValues().flat();
+    hit = keys.findIndex(x => String(x || '') === siteKey);
+  }
+  if (hit >= 0) sh.getRange(hit+2,1,1,row.length).setValues([row]);
+  else sh.appendRow(row);
+}
+
+function sbosSaveCurrentBlogSession_() {
+  const siteName = sbosGetSetting_('site_name') || '';
+  const siteUrl = sbosGetSetting_('site_url') || '';
+  const siteKey = sbosSiteKey_(siteName, siteUrl);
+  if (!siteKey || (!siteName && !siteUrl)) return {saved:false};
+
+  sbosReplaceSessionSnapshot_(SBOS_SHEETS.SESSION_KEYWORDS, siteKey, SBOS_SHEETS.KEYWORDS);
+  sbosReplaceSessionSnapshot_(SBOS_SHEETS.SESSION_CANDIDATES, siteKey, SBOS_SHEETS.CANDIDATES);
+  sbosReplaceSessionSnapshot_(SBOS_SHEETS.SESSION_SETTINGS, siteKey, SBOS_SHEETS.SETTINGS);
+  sbosReplaceSessionSnapshot_(SBOS_SHEETS.SESSION_STATE, siteKey, SBOS_SHEETS.STATE);
+  sbosReplaceSessionSnapshot_(SBOS_SHEETS.SESSION_SERP, siteKey, SBOS_SHEETS.SERP_RESULTS);
+  sbosUpsertBlogSessionMeta_(siteKey);
+  sbosSetState_('active_site_key', siteKey);
+  return {saved:true,siteKey:siteKey,siteName:siteName,siteUrl:siteUrl};
+}
+
+function sbosSaveCurrentBlogSessionManual() {
+  const r = sbosSaveCurrentBlogSession_();
+  if (!r.saved) {
+    SpreadsheetApp.getUi().alert('対象ブログが未設定です。');
+    return;
+  }
+  sbosShowWorkflowResult_(
+    '現在のブログを保存しました',
+    '<b>ブログ:</b> ' + sbosEscapeHtml_(r.siteName) + '<br>' +
+    '<b>URL:</b> ' + sbosEscapeHtml_(r.siteUrl) + '<br><br>' +
+    'Keywords・Candidates・SERP結果・Creator/SBM進捗・処理状態を保存しました。',
+    '',
+    ''
+  );
+}
+
+function sbosListBlogSessions_() {
+  const sh = sbosInitBlogSessionsSheet_();
+  if (sh.getLastRow() < 2) return [];
+  return sh.getRange(2,1,sh.getLastRow()-1,11).getDisplayValues()
+    .filter(r => String(r[0] || '').trim())
+    .map(r => ({
+      siteKey:r[0], siteName:r[1], siteUrl:r[2], savedAt:r[3], status:r[4], inputFile:r[5],
+      keywordCount:Number(r[6])||0, candidateCount:Number(r[7])||0,
+      green:Number(r[8])||0, creatorPending:Number(r[9])||0, sbmLinked:Number(r[10])||0
+    }))
+    .sort((a,b) => String(b.savedAt).localeCompare(String(a.savedAt)));
+}
+
+function sbosRestoreBlogSession_(siteKey) {
+  const sessions = sbosListBlogSessions_();
+  const meta = sessions.find(x => x.siteKey === siteKey);
+  if (!meta) throw new Error('保存済みブログが見つかりません: ' + siteKey);
+
+  const okSettings = sbosRestoreSessionSnapshot_(SBOS_SHEETS.SESSION_SETTINGS, siteKey, SBOS_SHEETS.SETTINGS);
+  const okState = sbosRestoreSessionSnapshot_(SBOS_SHEETS.SESSION_STATE, siteKey, SBOS_SHEETS.STATE);
+  sbosRestoreSessionSnapshot_(SBOS_SHEETS.SESSION_KEYWORDS, siteKey, SBOS_SHEETS.KEYWORDS);
+  sbosRestoreSessionSnapshot_(SBOS_SHEETS.SESSION_CANDIDATES, siteKey, SBOS_SHEETS.CANDIDATES);
+  sbosRestoreSessionSnapshot_(SBOS_SHEETS.SESSION_SERP, siteKey, SBOS_SHEETS.SERP_RESULTS);
+
+  if (!okSettings) {
+    sbosSetSetting_('site_name', meta.siteName);
+    sbosSetSetting_('site_url', meta.siteUrl);
+  }
+  if (okState) sbosSyncStatePropertiesFromSheet_();
+  else sbosClearSbosDocumentProperties_();
+
+  PropertiesService.getDocumentProperties().setProperty('SBOS_active_site_key', siteKey);
+
+  sbosInitKeywords_();
+  sbosInitCandidates_();
+  sbosInitHome_();
+  sbosApplyCandidateFormatting_();
+  sbosRefreshHomeSummary_();
+
+  const cand = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
+  if (cand) SpreadsheetApp.getActive().setActiveSheet(cand);
+
+  const c = sbosSessionCounts_();
+  return {
+    siteKey:siteKey, siteName:sbosGetSetting_('site_name') || meta.siteName,
+    siteUrl:sbosGetSetting_('site_url') || meta.siteUrl,
+    green:c.green, creatorPending:c.creatorPending, sbmLinked:c.sbmLinked
+  };
+}
+
+function sbosSwitchToSavedBlog(siteKey) {
+  const current = sbosCurrentSiteKey_();
+  if (current && current !== siteKey) sbosSaveCurrentBlogSession_();
+  const r = sbosRestoreBlogSession_(String(siteKey || ''));
+  return {
+    ok:true,
+    message:'「' + r.siteName + '」を復元しました。\n' +
+      'GREEN: ' + r.green + '件\n' +
+      'Creator/SBM未処理: ' + r.creatorPending + '件\n' +
+      'SBM連携済み: ' + r.sbmLinked + '件\n\n保存地点から作業を再開できます。'
+  };
+}
+
+function sbosResetForNewBlog_(siteName, siteUrl) {
+  const ss = SpreadsheetApp.getActive();
+
+  const outputId = sbosGetSetting_('output_folder_id') || '';
+  const outputName = sbosGetSetting_('output_folder_name') || '';
+  const inputId = sbosGetSetting_('input_folder_id') || '';
+  const inputName = sbosGetSetting_('input_folder_name') || '';
+
+  sbosClearSbosDocumentProperties_();
+
+  [SBOS_SHEETS.KEYWORDS, SBOS_SHEETS.CANDIDATES, SBOS_SHEETS.STATE, SBOS_SHEETS.SERP_RESULTS].forEach(name => {
+    const sh = ss.getSheetByName(name);
+    if (sh) sh.clearContents();
+  });
+
+  const settings = ss.getSheetByName(SBOS_SHEETS.SETTINGS);
+  if (settings) settings.clearContents();
+
+  sbosInitSettings_();
+  sbosSetSetting_('site_name', siteName);
+  sbosSetSetting_('site_url', siteUrl);
+  if (outputId || outputName) {
+    sbosSetSetting_('output_folder_id', outputId);
+    sbosSetSetting_('output_folder_name', outputName);
+  }
+  if (inputId || inputName) {
+    sbosSetSetting_('input_folder_id', inputId);
+    sbosSetSetting_('input_folder_name', inputName);
+  }
+
+  sbosInitKeywords_();
+  sbosInitCandidates_();
+  sbosSetState_('status', '');
+  sbosSetState_('home_status_text', '新しいブログ：キーワード読込待ち');
+  sbosSetState_('active_site_key', sbosSiteKey_(siteName, siteUrl));
+  sbosInitHome_();
+  sbosRefreshHomeSummary_();
+}
+
+function sbosStartOrResumeBlog(siteName, siteUrl) {
+  const name = String(siteName || '').trim();
+  const url = String(siteUrl || '').trim();
+  if (!name || !url) throw new Error('ブログ名とブログURLを入力してください。');
+
+  const targetKey = sbosSiteKey_(name, url);
+  if (!targetKey) throw new Error('ブログURLを認識できません。');
+
+  const current = sbosCurrentSiteKey_();
+  if (current && current !== targetKey) sbosSaveCurrentBlogSession_();
+
+  const existing = sbosListBlogSessions_().find(x => x.siteKey === targetKey);
+  if (existing) {
+    const r = sbosRestoreBlogSession_(targetKey);
+    return {
+      ok:true,
+      message:'このブログには保存済み作業があります。新規作成せず復元しました。\n\n' +
+        'ブログ: ' + r.siteName + '\nGREEN: ' + r.green + '件\nCreator/SBM未処理: ' + r.creatorPending + '件'
+    };
+  }
+
+  sbosResetForNewBlog_(name, url);
+  sbosSaveCurrentBlogSession_();
+  return {
+    ok:true,
+    message:'新しいブログ「' + name + '」を開始しました。\n\n次は「1. キーワードファイルを読み込む」から開始してください。'
+  };
 }
 
 // ============================================================================
@@ -455,6 +853,7 @@ function sbosWriteImportedKeywords_(rows, meta) {
   sbosSetHomeStatus_('キーワード読込完了');
   sbosSetState_('status', SBOS_STATUS.IMPORT_DONE);
   sbosRefreshHomeSummary_();
+  sbosSaveCurrentBlogSession_();
 }
 
 // ============================================================================
@@ -617,6 +1016,7 @@ function sbosRunScreening_() {
   sbosSetState_('status', SBOS_STATUS.SERP_RUNNING);
   sbosSetState_('generated_4word_count', generated.length);
   sbosSetHomeStatus_('SERP精査待ち');
+  sbosSaveCurrentBlogSession_();
 
   return {
     serpCount: limited.length,
@@ -967,6 +1367,7 @@ function sbosImportSerpReviewResult(fileId) {
   sbosSetState_('serp_result_file_name', file.getName());
   const summary = 'SERP精査結果登録済み（GREEN ' + counts.GREEN + ' / YELLOW ' + counts.YELLOW + ' / BLOCK ' + counts.BLOCK + '）';
   sbosSetHomeStatus_(summary);
+  sbosSaveCurrentBlogSession_();
   return {
     applied: applied,
     green: counts.GREEN,
@@ -1186,6 +1587,7 @@ function sbosImportCannibalReviewResult(fileId) {
   sbosSetState_('cannibal_review_result_json', JSON.stringify(detail));
   sbosSetState_('status', counts.GREEN ? 'CANNIBAL_REVIEW_IMPORTED' : SBOS_STATUS.COMPLETE);
   sbosSetHomeStatus_('カニバリ精査結果登録済み');
+  sbosSaveCurrentBlogSession_();
 
   return {applied:applied,green:counts.GREEN,yellow:counts.YELLOW,block:counts.BLOCK};
 }
@@ -1337,6 +1739,7 @@ function sbosCreateCreatorReferral() {
   sh.getRange(row,11).setValue('作成済み');
   sh.getRange(row,1,1,17).setBackground('#eeeeee').setFontColor('#777777');
   sbosRefreshHomeSummary_();
+  sbosSaveCurrentBlogSession_();
 }
 
 function sbosBuildCreatorReferral_(v) {
@@ -1432,6 +1835,7 @@ function sbosRegisterSbmArticleResult() {
   sbosSetState_('last_sbm_link_article_id', articleId);
   sbosSetHomeStatus_('SBM登録済み・モニター中: ' + articleId);
   sbosApplyCandidateFormatting_();
+  sbosSaveCurrentBlogSession_();
 
   sbosShowWorkflowResult_(
     'SBM登録結果をBOSへ記録しました',
@@ -1510,7 +1914,13 @@ function sbosEnsureSheets_() {
     [SBOS_SHEETS.SETTINGS, false],
     [SBOS_SHEETS.STATE, true],
     [SBOS_SHEETS.ARTICLES, true],
-    [SBOS_SHEETS.SERP_RESULTS, true]
+    [SBOS_SHEETS.SERP_RESULTS, true],
+    [SBOS_SHEETS.BLOG_SESSIONS, true],
+    [SBOS_SHEETS.SESSION_KEYWORDS, true],
+    [SBOS_SHEETS.SESSION_CANDIDATES, true],
+    [SBOS_SHEETS.SESSION_SETTINGS, true],
+    [SBOS_SHEETS.SESSION_STATE, true],
+    [SBOS_SHEETS.SESSION_SERP, true]
   ];
   defs.forEach(([name, hidden]) => {
     let sh = ss.getSheetByName(name);
@@ -1519,6 +1929,8 @@ function sbosEnsureSheets_() {
   });
 
   sbosTidyDefaultSheets_();
+  sbosInitBlogSessionsSheet_();
+  sbosSessionStoreNames_().forEach(sbosInitSessionStoreSheet_);
   sbosInitSettings_();
   sbosInitKeywords_();
   sbosInitCandidates_();
