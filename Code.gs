@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.6.0
+ * SIMS Blue Ocean Screener v0.6.1
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.6.0
+ * SIMS Blue Ocean Screener v0.6.1
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.6.0';
+const SBOS_VERSION = '0.6.1';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -133,7 +133,7 @@ function sbosRefreshHomeSummary_() {
     existing4 = vals.filter(r => Number(r[5]) === 4).length;
   }
 
-  let generated4=0, serpWait=0, cannibalWait=0, green=0, yellow=0, block=0, clustered=0, creatorReady=0, creatorDone=0;
+  let generated4=0, serpWait=0, cannibalWait=0, green=0, yellow=0, block=0, clustered=0, creatorReady=0, creatorDone=0, sbmLinked=0;
   if (cand && cand.getLastRow() >= 2) {
     const vals = cand.getRange(2,1,cand.getLastRow()-1,13).getDisplayValues();
     vals.forEach(r => {
@@ -146,8 +146,14 @@ function sbosRefreshHomeSummary_() {
       if (st === 'CANNIBAL_PENDING') cannibalWait++;
       if (st === 'GREEN') {
         green++;
-        if (creator === '作成済み') creatorDone++;
-        else creatorReady++;
+        const articleId = String(r[13] || '');
+        if (articleId || creator === 'SBM登録済み') {
+          sbmLinked++;
+        } else if (creator === '作成済み') {
+          creatorDone++;
+        } else {
+          creatorReady++;
+        }
       }
       if (st === 'YELLOW') yellow++;
       if (st === 'BLOCK') block++;
@@ -167,8 +173,8 @@ function sbosRefreshHomeSummary_() {
 
   home.getRange('A20').setValue(yellow);
   home.getRange('C20').setValue(block);
-  home.getRange('E20').setValue(clustered);
-  home.getRange('G20').setValue(creatorDone);
+  home.getRange('E20').setValue(creatorDone);
+  home.getRange('G20').setValue(sbmLinked);
 
   home.getRange('C6').setValue(sbosGetSetting_('site_name') || '未設定');
   home.getRange('C7').setValue(sbosGetState_('input_file_name') || '未選択');
@@ -261,13 +267,37 @@ function sbosShowSiteSettings() {
     '<script>' +
     'function busy(v){document.getElementById("busy").style.display=v?"inline":"none";}' +
     'function fail(e){busy(false);alert(e&&e.message?e.message:e);}' +
-    'function done(m){busy(false);alert(m.message);google.script.host.close();}' +
+    'function done(m){busy(false);google.script.host.close();google.script.run.sbosShowBlogSwitchResult_(m);}' +
     'function openSaved(){const e=document.getElementById("saved");if(!e||!e.value)return;busy(true);google.script.run.withSuccessHandler(done).withFailureHandler(fail).sbosSwitchToSavedBlog(e.value);}' +
     'function startNew(){const n=document.getElementById("newName").value.trim(),u=document.getElementById("newUrl").value.trim();if(!n||!u){alert("ブログ名とブログURLを入力してください。");return;}busy(true);google.script.run.withSuccessHandler(done).withFailureHandler(fail).sbosStartOrResumeBlog(n,u);}' +
     '</script></div></body></html>'
   ).setWidth(720).setHeight(620);
 
   SpreadsheetApp.getUi().showModalDialog(html, '対象ブログを切り替える・再開する');
+}
+
+
+function sbosShowBlogSwitchResult_(result) {
+  const r = result || {};
+  const isNew = r.mode === 'NEW';
+  const title = isNew ? '新しいブログを開始しました' : 'ブログを復元しました';
+  const body = isNew
+    ? '<b>ブログ:</b> ' + sbosEscapeHtml_(r.siteName || '') + '<br>' +
+      '<b>URL:</b> ' + sbosEscapeHtml_(r.siteUrl || '') + '<br><br>' +
+      '新しいブログの作業領域を準備しました。<br>次はキーワードファイルを読み込んでください。'
+    : '<b>ブログ:</b> ' + sbosEscapeHtml_(r.siteName || '') + '<br>' +
+      '<b>URL:</b> ' + sbosEscapeHtml_(r.siteUrl || '') + '<br>' +
+      '<b>GREEN:</b> ' + Number(r.green || 0) + '件<br>' +
+      '<b>Creator/SBM未処理:</b> ' + Number(r.creatorPending || 0) + '件<br>' +
+      '<b>SBM登録済み:</b> ' + Number(r.sbmLinked || 0) + '件<br><br>' +
+      '保存地点から作業を再開できます。';
+
+  sbosShowWorkflowResult_(
+    title,
+    body,
+    isNew ? '1. キーワードファイルを読み込む' : '7. 候補を確認する',
+    isNew ? 'sbosShowDrivePicker' : 'sbosOpenCandidates'
+  );
 }
 
 function sbosShowOutputSettings() {
@@ -291,7 +321,7 @@ function sbosSetSetting_(key, value) {
 
 
 // ============================================================================
-// Multi-Blog Session Store v0.6.0
+// Multi-Blog Session Store v0.6.1
 // ============================================================================
 function sbosNormalizeSiteUrl_(url) {
   let s = String(url || '').trim().toLowerCase();
@@ -554,11 +584,9 @@ function sbosSwitchToSavedBlog(siteKey) {
   if (current && current !== siteKey) sbosSaveCurrentBlogSession_();
   const r = sbosRestoreBlogSession_(String(siteKey || ''));
   return {
-    ok:true,
-    message:'「' + r.siteName + '」を復元しました。\n' +
-      'GREEN: ' + r.green + '件\n' +
-      'Creator/SBM未処理: ' + r.creatorPending + '件\n' +
-      'SBM連携済み: ' + r.sbmLinked + '件\n\n保存地点から作業を再開できます。'
+    ok:true, mode:'RESTORE',
+    siteName:r.siteName, siteUrl:r.siteUrl,
+    green:r.green, creatorPending:r.creatorPending, sbmLinked:r.sbmLinked
   };
 }
 
@@ -616,17 +644,18 @@ function sbosStartOrResumeBlog(siteName, siteUrl) {
   if (existing) {
     const r = sbosRestoreBlogSession_(targetKey);
     return {
-      ok:true,
-      message:'このブログには保存済み作業があります。新規作成せず復元しました。\n\n' +
-        'ブログ: ' + r.siteName + '\nGREEN: ' + r.green + '件\nCreator/SBM未処理: ' + r.creatorPending + '件'
+      ok:true, mode:'RESTORE',
+      siteName:r.siteName, siteUrl:r.siteUrl,
+      green:r.green, creatorPending:r.creatorPending, sbmLinked:r.sbmLinked
     };
   }
 
   sbosResetForNewBlog_(name, url);
   sbosSaveCurrentBlogSession_();
   return {
-    ok:true,
-    message:'新しいブログ「' + name + '」を開始しました。\n\n次は「1. キーワードファイルを読み込む」から開始してください。'
+    ok:true, mode:'NEW',
+    siteName:name, siteUrl:url,
+    green:0, creatorPending:0, sbmLinked:0
   };
 }
 
@@ -1069,7 +1098,8 @@ function sbosApplyCandidateFormatting_() {
       const row = i + 2;
       const st = sbosStatusCode_(r[1]);
       const creator = r[10];
-      if (creator === '作成済み') {
+      const articleId = String(sh.getRange(row,14).getDisplayValue() || '');
+      if (creator === 'SBM登録済み' || articleId) {
         sh.getRange(row,1,1,17).setBackground('#eeeeee').setFontColor('#777777');
         return;
       }
@@ -1833,16 +1863,16 @@ function sbosRegisterSbmArticleResult() {
   sh.getRange(row,16).setValue('MONITORING');
   sh.getRange(row,17).setValue(sbosNow_());
   sbosSetState_('last_sbm_link_article_id', articleId);
-  sbosSetHomeStatus_('SBM登録済み・モニター中: ' + articleId);
+  sbosSetHomeStatus_('SBM登録済み: ' + articleId);
   sbosApplyCandidateFormatting_();
   sbosSaveCurrentBlogSession_();
 
   sbosShowWorkflowResult_(
     'SBM登録結果をBOSへ記録しました',
     '<b>Article ID:</b> ' + sbosEscapeHtml_(articleId) + '<br>' +
-    '<b>状態:</b> MONITORING<br>' +
+    '<b>BOS記録:</b> SBM登録済み<br>' +
     (url ? '<b>公開URL:</b> ' + sbosEscapeHtml_(url) + '<br>' : '') +
-    '<br>今後SBMの実績データと紐付けて、Blue Ocean判定の成功度を追跡できます。',
+    '<br>SBMへの登録完了をBOS側へ記録しました。実際のモニター状態・成果判定はSBM側で確認してください。',
     '7. 候補一覧を確認',
     'sbosOpenCandidates'
   );
@@ -1911,7 +1941,7 @@ function sbosEnsureSheets_() {
     [SBOS_SHEETS.HOME, false],
     [SBOS_SHEETS.KEYWORDS, false],
     [SBOS_SHEETS.CANDIDATES, false],
-    [SBOS_SHEETS.SETTINGS, false],
+    [SBOS_SHEETS.SETTINGS, true],
     [SBOS_SHEETS.STATE, true],
     [SBOS_SHEETS.ARTICLES, true],
     [SBOS_SHEETS.SERP_RESULTS, true],
@@ -1926,6 +1956,7 @@ function sbosEnsureSheets_() {
     let sh = ss.getSheetByName(name);
     if (!sh) sh = ss.insertSheet(name);
     if (hidden && !sh.isSheetHidden()) sh.hideSheet();
+    if (!hidden && sh.isSheetHidden()) sh.showSheet();
   });
 
   sbosTidyDefaultSheets_();
@@ -2005,8 +2036,8 @@ function sbosInitHome_() {
     .setFontWeight('bold').setFontColor('#174ea6').setBackground('#e8f0fe');
   sbosHomeCard_(sh,'A19:B19','A20:B21','YELLOW','#fff2cc');
   sbosHomeCard_(sh,'C19:D19','C20:D21','BLOCK','#e6e6e6');
-  sbosHomeCard_(sh,'E19:F19','E20:F21','類似候補へ統合','#f1f3f4');
-  sbosHomeCard_(sh,'G19:H19','G20:H21','Creator依頼済み','#f1f3f4');
+  sbosHomeCard_(sh,'E19:F19','E20:F21','Creator依頼済み','#f1f3f4');
+  sbosHomeCard_(sh,'G19:H19','G20:H21','SBM登録済み','#d9ead3');
 
   // Workflow guide
   sh.getRange('A23:H23').merge().setValue('標準フロー')
@@ -2014,7 +2045,7 @@ function sbosInitHome_() {
   sh.getRange('A24:H27').setValues([
     ['1','キーワード読込','→','2','候補探索・4語深掘り','→','3','SERP精査'],
     ['4','SERP結果登録','→','5','カニバリ精査','→','6','カニバリ結果登録'],
-    ['7','GREEN候補確認','→','8','Creator依頼文作成','','',''],
+    ['7','GREEN候補確認','→','8','Creator依頼文作成','→','9','SBM登録結果記録'],
     ['','','','','','','','']
   ]);
   sh.getRange('A24:H26').setVerticalAlignment('middle');
@@ -2023,7 +2054,7 @@ function sbosInitHome_() {
   sh.getRange('G24:G26').setFontWeight('bold').setFontColor('#174ea6');
 
   sh.getRange('A29:H30').merge().setValue(
-    'GREENはSERP精査とカニバリ精査を通過した新規記事候補です。新規記事はSIMS Article Creatorへ渡します。'
+    'GREENはSERP精査とカニバリ精査を通過した新規記事候補です。Creatorで記事を作成し、SBM登録完了後に処理済みとしてグレーアウトします。'
   ).setWrap(true).setFontSize(9).setFontColor('#5f6368').setBackground('#f8fafd');
 
   // Layout sizing
@@ -2081,6 +2112,10 @@ function sbosInitKeywords_() {
     sh.setFrozenRows(1);
     sh.getRange(1,1,1,13).setFontWeight('bold');
   }
+  // User-facing view: keep source keyword metrics visible and hide internal normalization/intent columns.
+  sh.showColumns(1, Math.min(11, sh.getMaxColumns()));
+  if (sh.getMaxColumns() >= 12) sh.hideColumns(12, Math.min(2, sh.getMaxColumns() - 11));
+  if (sh.getMaxColumns() >= 5) sh.hideColumns(5, Math.min(2, sh.getMaxColumns() - 4));
 }
 
 function sbosInitCandidates_() {
@@ -2109,6 +2144,7 @@ function sbosInitCandidates_() {
     });
     if (changed) sh.getRange(2,1,vals.length,13).setValues(vals);
   }
+  sbosApplyCandidateFormatting_();
 }
 
 function sbosOpenCandidates() {
