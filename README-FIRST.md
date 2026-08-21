@@ -1,65 +1,74 @@
-# SIMS Blue Ocean Screener v0.6.0
+# SIMS Blue Ocean Screener v0.6.2
 
-## 新機能：複数ブログの保存・切替・復元
+## 修正内容
 
-v0.5.xまでは、Keywords / Candidates / 状態が1ブログ分しかなく、
-別ブログのキーワードファイルを読み込むと前ブログの作業状態を上書きする設計でした。
+### 1. カスタムメニューが消える問題への対策
+- onOpen() で最初に SIMS Blue Ocean Screener メニューを生成
+- シート整形処理でエラーが起きてもメニュー自体は表示される設計へ変更
+- onInstall() も追加
 
-v0.6.0ではブログ単位のセッション保存を追加しました。
+### 2. Keywordsシートの視認性改善
+通常表示：
+- No
+- キーワード
+- 語数
+- SEO難易度
+- 月間検索数
+- CPC
+- 競合性
+- 出現時期
 
-### 保存する内容
-- Keywords
-- Candidates（GREEN/YELLOW/BLOCK）
-- Creator Status
+非表示（内部保持）：
+- Source
+- SourceWordCount
+- Normalized Keyword
+- Intent Key
+- Primary Candidate
+
+### 3. Candidatesシートの視認性改善
+通常表示：
+- Rank
+- 状態
+- メインキーワード
+- 語数
+- Blue Ocean Score
+- カニバリ
+- 検索意図
+- 判定根拠
+- Creator状態
 - SBM Article ID
 - 公開URL
-- BOS Outcome / MONITORING
+
+非表示（内部保持）：
+- Pre Score
+- Source
+- Intent Key
+- SERP Status
+- BOS Outcome
+- SBM Linked At
+
+- 長文列は折返し
+- 列幅を利用者向けに調整
+- フィルタを追加
+- SBM登録完了行のみ行全体をグレーアウト
+
+### 4. 利用者向けタブ
+表示：
+- Home
+- Keywords
+- Candidates
+
+非表示：
 - Settings
-- _State（SERP/Cannibal request_id等）
-- SERP精査アーカイブ
-- 入力ファイル名・処理状態
-
-### 操作
-追加の操作 → 「対象ブログを切り替える・再開する」
-
-- 保存済みブログを選択して復元
-- 新しいブログを開始
-- 切替直前に現在ブログを自動保存
-- 同じURLの保存済みブログを新規入力しても、上書きせず復元
-
-### 自動保存タイミング
-- キーワード読込後
-- 一次選抜・4語深掘り後
-- SERP精査結果登録後
-- カニバリ精査結果登録後
-- Creator依頼文作成後
-- SBM登録結果をBOSへ記録後
-- ブログ切替直前
-
-### 新しい隠しシート
+- _State
+- _ExistingArticles
+- _SerpReview
 - _BlogSessions
-- _SessionKeywords
-- _SessionCandidates
-- _SessionSettings
-- _SessionState
-- _SessionSerpReview
+- 各Session内部シート
 
-利用者が直接操作する必要はありません。
-
-## v0.5.3からの置換
+## 置換
 - Code.gs : 置換
 - DrivePicker.html : 変更なし
 
-既存のスマホ生活知識メモの現在データは、
-最初に「対象ブログを切り替える・再開する」を開いた時点で自動保存されます。
-
-## 実運用試験
-1. v0.6.0 Code.gsを適用
-2. 追加の操作 → 対象ブログを切り替える・再開する
-3. 現在のスマホ生活知識メモが保存済み一覧に出ることを確認
-4. 新しいブログを開始してキーワード探索
-5. 再び切替画面からスマホ生活知識メモを選択
-6. GREEN候補・Creator/SBM処理済み状態・未処理候補が復元されることを確認
-
 ## 推奨コミットメッセージ
-feat: release SIMS Blue Ocean Screener v0.6.0 multi-blog session save and restore
+fix: release SIMS Blue Ocean Screener v0.6.2 restore menu and simplify user sheets

@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.6.1
+ * SIMS Blue Ocean Screener v0.6.2
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,15 +12,31 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.6.1
+ * SIMS Blue Ocean Screener v0.6.2
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.6.1';
+const SBOS_VERSION = '0.6.2';
 
 function onOpen() {
-  sbosEnsureSheets_();
+  // メニューは最優先で表示する。シート整形で問題が起きてもメニューを失わない。
   sbosBuildMenu_();
+  try {
+    sbosEnsureSheets_();
+  } catch (e) {
+    console.error(e);
+    try {
+      SpreadsheetApp.getActive().toast(
+        'シート表示の初期化で問題が発生しました。メニューは利用できます。',
+        SBOS_PRODUCT_NAME,
+        8
+      );
+    } catch(ignore) {}
+  }
+}
+
+function onInstall() {
+  onOpen();
 }
 
 function sbosAbout() {
@@ -321,7 +337,7 @@ function sbosSetSetting_(key, value) {
 
 
 // ============================================================================
-// Multi-Blog Session Store v0.6.1
+// Multi-Blog Session Store v0.6.2
 // ============================================================================
 function sbosNormalizeSiteUrl_(url) {
   let s = String(url || '').trim().toLowerCase();
@@ -1089,20 +1105,54 @@ function sbosDescribeIntent_(kw) {
 
 function sbosApplyCandidateFormatting_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
-  sh.autoResizeColumns(1,13);
-  sh.setColumnWidth(2,150); sh.setColumnWidth(3,280); sh.setColumnWidth(8,360); sh.setColumnWidth(9,420);
+  if (!sh) return;
+
+  // 利用者向け表示。内部処理列は保持し、通常は非表示にする。
+  try { sh.showColumns(1, Math.min(17, sh.getMaxColumns())); } catch(e) {}
+  [5,10,12,13,16,17].forEach(c => {
+    if (c <= sh.getMaxColumns()) {
+      try { sh.hideColumns(c); } catch(e) {}
+    }
+  });
+
+  const widths = {
+    1:65,   // Rank
+    2:115,  // 状態
+    3:330,  // Keyword
+    4:60,   // 語数
+    6:120,  // Blue Ocean Score
+    7:105,  // Cannibal
+    8:320,  // Search Intent
+    9:520,  // Evidence
+    11:115, // Creator
+    14:115, // SBM ID
+    15:300  // URL
+  };
+  Object.keys(widths).forEach(k => {
+    const c = Number(k);
+    if (c <= sh.getMaxColumns()) sh.setColumnWidth(c, widths[k]);
+  });
+
+  sh.setFrozenRows(1);
+  sh.getRange(1,1,1,17)
+    .setFontWeight('bold').setBackground('#e8f0fe').setFontColor('#174ea6');
+
   const last = sh.getLastRow();
   if (last >= 2) {
-    const vals = sh.getRange(2,1,last-1,13).getDisplayValues();
+    const vals = sh.getRange(2,1,last-1,17).getDisplayValues();
     vals.forEach((r,i) => {
       const row = i + 2;
       const st = sbosStatusCode_(r[1]);
-      const creator = r[10];
-      const articleId = String(sh.getRange(row,14).getDisplayValue() || '');
+      const creator = String(r[10] || '');
+      const articleId = String(r[13] || '');
+
+      // SBM登録完了のみ処理済みとして行全体をグレーアウト。
       if (creator === 'SBM登録済み' || articleId) {
-        sh.getRange(row,1,1,17).setBackground('#eeeeee').setFontColor('#777777');
+        sh.getRange(row,1,1,17)
+          .setBackground('#eeeeee').setFontColor('#777777');
         return;
       }
+
       sh.getRange(row,1,1,17).setFontColor('#202124').setBackground(null);
       let bg = '#f1f3f4';
       if (st === 'CANNIBAL_PENDING' || st === 'YELLOW') bg = '#fff2cc';
@@ -1110,7 +1160,16 @@ function sbosApplyCandidateFormatting_() {
       if (st === 'GREEN') bg = '#d9ead3';
       sh.getRange(row,2).setBackground(bg);
     });
+
+    sh.getRange(2,3,last-1,1).setWrap(true);
+    sh.getRange(2,8,last-1,2).setWrap(true);
+    sh.getRange(2,15,last-1,1).setWrap(true);
   }
+
+  if (!sh.getFilter() && sh.getLastRow() >= 1) {
+    try { sh.getRange(1,1,Math.max(1,sh.getLastRow()),17).createFilter(); } catch(e) {}
+  }
+
   sbosRefreshHomeSummary_();
 }
 
@@ -1967,12 +2026,25 @@ function sbosEnsureSheets_() {
   sbosInitCandidates_();
   sbosInitHome_();
   sbosRefreshHomeSummary_();
+  sbosApplyUserVisibleSheets_();
 
   const home = ss.getSheetByName(SBOS_SHEETS.HOME);
   if (home && ss.getSheets()[0].getSheetId() !== home.getSheetId()) {
     ss.setActiveSheet(home);
     ss.moveActiveSheet(1);
   }
+}
+
+function sbosApplyUserVisibleSheets_() {
+  const ss = SpreadsheetApp.getActive();
+  const visible = new Set([SBOS_SHEETS.HOME, SBOS_SHEETS.KEYWORDS, SBOS_SHEETS.CANDIDATES]);
+  ss.getSheets().forEach(sh => {
+    const shouldShow = visible.has(sh.getName());
+    try {
+      if (shouldShow && sh.isSheetHidden()) sh.showSheet();
+      if (!shouldShow && !sh.isSheetHidden()) sh.hideSheet();
+    } catch(e) {}
+  });
 }
 
 function sbosInitHome_() {
@@ -2105,29 +2177,51 @@ function sbosInitSettings_() {
 function sbosInitKeywords_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.KEYWORDS);
   if (sh.getLastRow() === 0) {
-    sh.getRange(1,1,1,13).setValues([[
-      'No','Source','SourceWordCount','Raw Keyword','Normalized Keyword','DetectedWords',
-      'SEO Difficulty','Monthly Volume','CPC','Competition','Occurrence','Intent Key','Primary Candidate'
-    ]]);
-    sh.setFrozenRows(1);
-    sh.getRange(1,1,1,13).setFontWeight('bold');
+    sh.getRange(1,1,1,13).clear();
   }
-  // User-facing view: keep source keyword metrics visible and hide internal normalization/intent columns.
-  sh.showColumns(1, Math.min(11, sh.getMaxColumns()));
-  if (sh.getMaxColumns() >= 12) sh.hideColumns(12, Math.min(2, sh.getMaxColumns() - 11));
-  if (sh.getMaxColumns() >= 5) sh.hideColumns(5, Math.min(2, sh.getMaxColumns() - 4));
+  sh.getRange(1,1,1,13).setValues([[
+    'No','Source','SourceWordCount','キーワード','Normalized Keyword','語数',
+    'SEO難易度','月間検索数','CPC','競合性','出現時期','Intent Key','Primary Candidate'
+  ]]);
+  sh.setFrozenRows(1);
+  sh.getRange(1,1,1,13)
+    .setFontWeight('bold').setBackground('#e8f0fe').setFontColor('#174ea6');
+
+  // 利用者向け表示：A,D,F:Kのみを見せる。内部列は保持したまま非表示。
+  try { sh.showColumns(1, Math.min(13, sh.getMaxColumns())); } catch(e) {}
+  [2,3,5,12,13].forEach(c => {
+    if (c <= sh.getMaxColumns()) {
+      try { sh.hideColumns(c); } catch(e) {}
+    }
+  });
+
+  sh.setColumnWidth(1,70);
+  sh.setColumnWidth(4,360);
+  sh.setColumnWidth(6,70);
+  sh.setColumnWidth(7,100);
+  sh.setColumnWidth(8,110);
+  sh.setColumnWidth(9,90);
+  sh.setColumnWidth(10,90);
+  sh.setColumnWidth(11,110);
+  if (sh.getLastRow() >= 2) {
+    sh.getRange(2,4,sh.getLastRow()-1,1).setWrap(true);
+  }
+  if (!sh.getFilter() && sh.getLastRow() >= 1) {
+    try { sh.getRange(1,1,Math.max(1,sh.getLastRow()),13).createFilter(); } catch(e) {}
+  }
 }
 
 function sbosInitCandidates_() {
   const sh = SpreadsheetApp.getActive().getSheetByName(SBOS_SHEETS.CANDIDATES);
   if (sh.getLastRow() === 0) sh.getRange(1,1,1,17).clear();
   sh.getRange(1,1,1,17).setValues([[
-    'Rank','状態','Main Keyword','Words','Pre Score','Blue Ocean Score','Cannibalization','Search Intent',
-    'Evidence Summary','Source','Creator Status','Intent Key','SERP Status',
-    'SBM Article ID','Published URL','BOS Outcome','SBM Linked At'
+    'Rank','状態','メインキーワード','語数','Pre Score','Blue Ocean Score','カニバリ','検索意図',
+    '判定根拠','Source','Creator状態','Intent Key','SERP Status',
+    'SBM Article ID','公開URL','BOS Outcome','SBM Linked At'
   ]]);
   sh.setFrozenRows(1);
-  sh.getRange(1,1,1,17).setFontWeight('bold');
+  sh.getRange(1,1,1,17)
+    .setFontWeight('bold').setBackground('#e8f0fe').setFontColor('#174ea6');
 
   if (sh.getLastRow() >= 2) {
     const vals = sh.getRange(2,1,sh.getLastRow()-1,13).getValues();
