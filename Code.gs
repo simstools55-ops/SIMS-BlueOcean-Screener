@@ -1,5 +1,5 @@
 /**
- * SIMS Blue Ocean Screener v0.5.2
+ * SIMS Blue Ocean Screener v0.5.3
  * Single-Code Apps Script distribution.
  * UI / operational completion baseline.
  *
@@ -12,11 +12,11 @@
 // Source consolidated from: Code.gs
 // ============================================================================
 /**
- * SIMS Blue Ocean Screener v0.5.2
+ * SIMS Blue Ocean Screener v0.5.3
  * Prototype baseline.
  */
 const SBOS_PRODUCT_NAME = 'SIMS Blue Ocean Screener';
-const SBOS_VERSION = '0.5.2';
+const SBOS_VERSION = '0.5.3';
 
 function onOpen() {
   sbosEnsureSheets_();
@@ -1305,9 +1305,34 @@ function sbosCreateCreatorReferral() {
   }
   const text = sbosBuildCreatorReferral_(v);
   const html = HtmlService.createHtmlOutput(
-    '<div style="font-family:Arial;padding:14px"><h3>Creator依頼文</h3><textarea style="width:100%;height:360px">' +
-    sbosEscapeHtml_(text) + '</textarea><p>全文をコピーしてSIMS Article Creatorへ渡してください。</p></div>'
-  ).setWidth(760).setHeight(520);
+    '<!doctype html><html><head><base target="_top"><style>' +
+    'body{font-family:Arial,sans-serif;margin:0;color:#202124;background:#fff}' +
+    '.wrap{padding:20px}.head{font-size:18px;font-weight:700;margin-bottom:12px;color:#174ea6}' +
+    'textarea{width:100%;height:350px;box-sizing:border-box;border:1px solid #dadce0;border-radius:6px;padding:10px;font-family:Arial,sans-serif;font-size:13px;line-height:1.5;resize:vertical}' +
+    '.note{margin:10px 0 0;color:#5f6368;font-size:13px}' +
+    '.foot{display:flex;justify-content:flex-end;gap:10px;padding-top:16px}' +
+    'button{border:0;border-radius:6px;padding:9px 16px;font-weight:600;cursor:pointer}' +
+    '.primary{background:#1a73e8;color:#fff}.secondary{background:#f1f3f4;color:#3c4043}' +
+    '.copied{display:none;margin-right:auto;align-self:center;color:#188038;font-size:12px;font-weight:600}' +
+    '</style></head><body><div class="wrap">' +
+    '<div class="head">Creator依頼文</div>' +
+    '<textarea id="referral">' + sbosEscapeHtml_(text) + '</textarea>' +
+    '<p class="note">全文をコピーしてSIMS Article Creatorへ渡してください。</p>' +
+    '<div class="foot"><span id="copied" class="copied">コピーしました</span>' +
+    '<button class="primary" onclick="copyReferral()">全文をコピー</button>' +
+    '<button class="secondary" onclick="google.script.host.close()">閉じる</button>' +
+    '</div></div>' +
+    '<script>' +
+    'async function copyReferral(){' +
+      'const t=document.getElementById("referral");' +
+      'try{' +
+        'if(navigator.clipboard&&navigator.clipboard.writeText){await navigator.clipboard.writeText(t.value);}' +
+        'else{t.focus();t.select();document.execCommand("copy");}' +
+        'const c=document.getElementById("copied");c.style.display="inline";setTimeout(()=>c.style.display="none",1800);' +
+      '}catch(e){t.focus();t.select();alert("コピーできませんでした。選択状態にしたので Ctrl+C でコピーしてください。");}' +
+    '}' +
+    '</script></body></html>'
+  ).setWidth(780).setHeight(570);
   SpreadsheetApp.getUi().showModalDialog(html, '8. Creator依頼文を作成する');
   sh.getRange(row,11).setValue('作成済み');
   sh.getRange(row,1,1,17).setBackground('#eeeeee').setFontColor('#777777');
